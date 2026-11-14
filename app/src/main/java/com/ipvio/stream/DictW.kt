@@ -57,6 +57,7 @@ Hoch/Runter blättert¦Up/Down scrolls
 fun loadWishboxTexts() {
     I18nCore.load(DictW)
     I18nCore.loadColumn(I18nCore.CODES.indexOf("nl"), DictNlW)
+    loadPolishTexts()
 }
 
 // Dutch column for the rows above
