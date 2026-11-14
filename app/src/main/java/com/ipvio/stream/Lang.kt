@@ -24,6 +24,7 @@ object Lang {
         loaded = true
         I18nCore.load(DictA, DictB, DictC, DictD, DictE, DictF, DictG, DictH, DictI, DictJ, DictK, DictL, DictM, DictN, DictO)
         I18nCore.loadColumn(I18nCore.CODES.indexOf("nl"), DictNl1, DictNl2, DictNl3, DictNl4, DictNl5, DictNl6)
+        loadPolishTexts()
     }
 
     /** Index in I18nCore.CODES. Reads the state so texts are redrawn on switching. */
