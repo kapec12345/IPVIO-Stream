@@ -1,4 +1,12 @@
-Last update: 2026-11-12 (release 1.4 prepared). Read `CLAUDE.md` first, then this file.
+Last update: 2026-11-14 (kapec12345 fork setup). Read `CLAUDE.md` first, then this file.
+
+## Fork task K-001
+
+Implemented separate application ID `com.kapec12345.ipviostream` and built-in updates from `kapec12345/IPVIO-Stream`. Changed `app/build.gradle.kts` and `AppUpdate.kt`; task details and device test steps: [K-001-fork-setup.md](K-001-fork-setup.md). Static inspection completed. Local build unavailable (no Java runtime); no device tests, signing key or release APK yet. Next: verify the existing GitHub Actions build, then device testing and first signed release.
+
+## Upstream work history
+
+The entries below are inherited from the original project and are not validation of this fork.
 
 ## Current task
 
