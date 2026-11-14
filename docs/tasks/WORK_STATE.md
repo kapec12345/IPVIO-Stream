@@ -2,7 +2,15 @@ Last update: 2026-11-14 (kapec12345 fork setup). Read `CLAUDE.md` first, then th
 
 ## Fork task K-001
 
-Implemented separate application ID `com.kapec12345.ipviostream` and built-in updates from `kapec12345/IPVIO-Stream`. Changed `app/build.gradle.kts` and `AppUpdate.kt`; task details and device test steps: [K-001-fork-setup.md](K-001-fork-setup.md). Static inspection completed. Local build unavailable (no Java runtime); no device tests, signing key or release APK yet. Next: verify the existing GitHub Actions build, then device testing and first signed release.
+Implemented separate application ID `com.kapec12345.ipviostream` and built-in updates from `kapec12345/IPVIO-Stream`. Changed `app/build.gradle.kts` and `AppUpdate.kt`; task details and device test steps: [K-001-fork-setup.md](K-001-fork-setup.md). Static inspection completed. Local build unavailable (no Java runtime).
+
+## Fork task K-002: Installable test APK
+
+Enabled existing GitHub Actions and ran Build APK. First run had 363 tests, two failures caused by outdated expectations. Updated LoadLogicTest to retain untagged channels and SubSearchLogicTest to accept season packs while checking API key removal and pack flags. No production logic changed.
+
+Build #3 succeeded for commit a66c97df55fadb2580af22f2d06212c2f78fd9e3: testDebugUnitTest and assembleDebug both passed. Run: https://github.com/kapec12345/IPVIO-Stream/actions/runs/43624277518 . Artifact: ipvio-stream-debug, ID 14124913578. Downloaded archive SHA-256 matches GitHub: 849ed7e3865ff7d3da5979dbf53a55cf68eebdffc1e4d9e37a56faf8d344f3c0. Extracted APK ZIP integrity check passed. APK SHA-256: edbde2ba6206268c3d204130be54730464ddd4b3e577e98873f33e3172f7f508.
+
+Version 1.4.2 (code 7), debug application ID com.kapec12345.ipviostream.test. This is a test APK signed by the build environment, not a production release. No persistent release key created. Future debug builds may use a different signing key; back up settings before replacing this test installation. Next: install on Android TV/Fire TV, test launch, remote navigation, playlist import, playback, standby and network recovery. Device validation and first stable signed release remain pending.
 
 ## Upstream work history
 
