@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- K-003: Polish interface with 1,892 dictionary entries, automatic Polish device-language detection, phone-page language detection and placeholder/coverage tests. Version 1.4.3-pl (code 8).
+
 - Fork setup (K-001): separate application ID `com.kapec12345.ipviostream`; built-in updates now use `kapec12345/IPVIO-Stream`. No APK release yet.
 
 ## 1.4.1
