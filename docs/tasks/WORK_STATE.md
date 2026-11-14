@@ -1,3 +1,9 @@
+# Polish interface — 2026-11-14
+
+K-003: Polish added as language index 10 (existing indices unchanged). DictPl.kt covers 1,892 German source keys from DictA–O and DictW in seven blocks below the JVM string limit. Public UI text was initially machine-translated; 250 common labels and additional EPG messages were manually corrected. Static validation confirmed nonempty translations and identical placeholders for every source key. Lang.kt and loadWishboxTexts both apply the Polish column. PolishLocaleTest checks language detection, full coverage, parameters and reloading. Version 1.4.3-pl, code 8.
+
+Validation: CI build and device verification pending. No credentials, storage keys, dependencies or player logic changed. The installed debug APK may use a different signing certificate from a new CI build: do not uninstall or clear user data to update it. Preserve the current installation until compatible signing or an approved backup/restore plan is available.
+
 Last update: 2026-11-14 (kapec12345 fork setup). Read `CLAUDE.md` first, then this file.
 
 ## Fork task K-001
