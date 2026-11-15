@@ -1,3 +1,49 @@
+## K-015 – One-click episode resume from recently watched series (2026-11-15)
+
+Preview 1.4.14-pl is installed on the Philips. A remote OK resumed the saved episode and Back restored its history poster. See [scope and checks](K-015-series-poster-resume.md).
+
+## K-014 – Live TV guide and variant schedules (2026-11-15)
+
+Preview 1.4.13-pl is installed on the Philips. All 17 pairs, direct entry to the guide, and remote playback navigation were verified. See [scope and results](K-014-guide-and-variants.md).
+
+## K-013 – EPG.OVH name matching (2026-11-15)
+
+Installed preview 1.4.12-pl and enabled the Polish guide on the Philips. The TVN 24 RAW and TVN24 BiS RAW now/next checks matched the public guide. See [scope and validation](K-013-polish-guide.md).
+
+## K-012 – IMDb fallback for movies (2026-11-15)
+
+Preview 1.4.11-pl installed and checked on the Philips. The poster and title panel showed the same IMDb score for Frankenstein (1931). See [scope and validation](K-012-imdb-fallback.md).
+
+## K-010/K-011 – New VOD arrivals, separate histories and compact live TV (2026-11-15)
+
+Preview 1.4.10-pl installed on the Philips. See [catalog and history checks](K-010-newest-and-watched.md) and [live screen checks](K-011-compact-live.md). The targeted tests passed. Full suite: 384 passed, 2 existing phone-transfer/import tests reported a local socket reset.
+
+## K-009 – Kino Filmweb and production year sorting (2026-11-15)
+
+Installed 1.4.9-pl on the Philips. Checked movie and series poster order and the corrected Allen title rating. All 19 targeted tests passed. See [device and test results](K-009-kino-filmweb-sorting.md).
+
+## K-008 – Filmweb ratings and release years on posters (2026-11-15)
+
+The 1.4.8-pl preview updated the Philips in place. Movie and series cards in Kino were verified directly on the TV. See [scope and results](K-008-poster-ratings.md).
+
+## K-007 – Filmweb ratings (2026-11-15)
+
+The 1.4.7-pl preview update is installed on the Philips. Filmweb scores and votes matched the source for a movie and a series. See [scope and checks](K-007-filmweb.md).
+
+## K-006 – Kino poster quality (2026-11-15)
+
+The 1.4.6-pl preview update is installed on the Philips. See [poster selection and device checks](K-006-kino-posters.md).
+
+## K-005 – In-app layouts and named looks (2026-11-15)
+
+Classic and VOD can be selected in Settings → Design and color. Each viewer profile can save, apply, edit, rename and remove its own looks. The 1.4.5-pl (10) preview APK passed archive and signature checks and has the same signing certificate as the 1.4.4-pl preview. All four new tests passed. Of 371 unit tests, 369 passed and the two existing phone import/transfer tests reported connection resets. Installed on the Philips UHD Android TV. Both looks could be named via the TV keyboard and switched with directional and OK key events. Both names and the active selection persisted across a cold launch. See [scope and device checks](K-005-saved-looks.md).
+
+## K-004 – TV catalogue readability (2026-11-15)
+
+Updated the local fork and built the separate TV preview package for version 1.4.4-pl (9). See [scope, tests and device checks](K-004-tv-browsing.md). The package passed signature and archive checks. The phone transfer and phone import tests encountered socket resets; 365 of 367 tests passed. Philips testing and publishing the changes to the fork are pending.
+
+Device verification update (2026-11-14): User authorized private backup, reinstall and restore. Migration completed on Philips 65PUS8536/12. Polish UI, 710 live channels and recently watched history verified; TVP Sport playback started successfully. Private backup remains outside repository. Some translated labels need editorial review (Stalker portal and narrow on/off labels). This supersedes the earlier pending-install status below.
+
 # Polish interface — 2026-11-14
 
 K-003: Polish added as language index 10 (existing indices unchanged). DictPl.kt covers 1,892 German source keys from DictA–O and DictW in seven blocks below the JVM string limit. Public UI text was initially machine-translated; 250 common labels and additional EPG messages were manually corrected. Static validation confirmed nonempty translations and identical placeholders for every source key. Lang.kt and loadWishboxTexts both apply the Polish column. PolishLocaleTest checks language detection, full coverage, parameters and reloading. Version 1.4.3-pl, code 8.

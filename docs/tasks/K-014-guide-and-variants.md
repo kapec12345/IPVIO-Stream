@@ -1,0 +1,7 @@
+# K-014 – Live TV guide and programme sharing between verified editions
+
+Live TV opens the existing programme grid directly. Its standalone layout moves the category list into a selector, uses the video preview space for listings, and starts playback when a channel is selected. The player can still open its guide during playback.
+
+GuideVariants identifies HD/UHD editions in the Polish TVN Player category and HD/FHD Crime and Investigation in the documentary category. Matching requires the same full station name, playlist source, language and category and exactly one donor. The source is used only to fill missing time slots. A correction in PolishGuideNames resolves the conflicting public aliases for CI Polsat and ID. The implementation also supports a donor whose listings must be fetched individually.
+
+The 1.4.13-pl (18) preview passed the APK archive and signature checks and upgraded the Philips in place. All 86 tests in 15 targeted suites passed. On the television, all 17 previously empty editions reported the same current programme title and start/end timestamps as their corresponding donor edition. The Crime and Investigation entry also matched the public CI Polsat listing. After a cold launch, Down and OK on the Live TV tile opened the standalone grid. The TVN Player grid showed matching current and following listings in HD and UHD. OK opened TVN Czas na Ślub HD and Back returned to the guide with that channel focused.
