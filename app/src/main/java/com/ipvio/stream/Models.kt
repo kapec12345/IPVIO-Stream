@@ -130,10 +130,14 @@ data class Item(
     /** Language according to the provider's tag (abbreviation from [LangTagLogic], "?" = no tag). */
     val lang: String = LangTagLogic.UNKNOWN,
     /** Source with several playlists shown at once: 0 = main playlist, 1 … = further ones (see [MultiLogic]). */
-    val src: Int = 0
+    val src: Int = 0,
+    /** Unix seconds provided by the source or first observed at a catalog refresh. Zero for undated baseline entries. */
+    var addedAt: Long = 0L
 ) {
     // Key for the metadata cache: computed once per title instead of anew on every sort comparison.
     // Own field instead of "by lazy": saves two helper objects per title with 100,000+ titles.
+    private var filmwebNameCache: String? = null
+    internal val filmwebName: String get() = filmwebNameCache ?: MatchLogic.norm(MatchLogic.searchTitle(title)).also { filmwebNameCache = it }
     private var mkCache: String? = null
     val mk: String get() = mkCache ?: (kind.name + "|" + title.lowercase() + "|" + (year ?: 0)).also { mkCache = it }
 }
@@ -374,7 +378,7 @@ object M3uParser {
      * one after another, beginnings/labels/languages as references to shared texts. Saves a good 30 MB at the peak when parsing large lists
      * (580,000 episodes).
      */
-    private class SeriesAcc(val title: String, val logo: String?, val group: String, val q: String?, val lang: String) {
+    private class SeriesAcc(val title: String, val logo: String?, val group: String, val q: String?, val lang: String, val addedAt: Long) {
         var n = 0
         var ss = IntArray(4)
         var nn = IntArray(4)
@@ -446,7 +450,7 @@ object M3uParser {
                     val key = cleaned.lowercase()
                     val title = TitleText.title(cleaned)
                     val acc = series.getOrPut(key) {
-                        SeriesAcc(title, attr(e.info, "tvg-logo")?.ifBlank { null }, group, q, kd.lang)
+                        SeriesAcc(title, attr(e.info, "tvg-logo")?.ifBlank { null }, group, q, kd.lang, VodRecency.timestamp(attr(e.info, "added")))
                     }
                     if (acc.done) return@entries
                     val season = m?.groupValues?.get(2)?.toIntOrNull() ?: 1
@@ -458,7 +462,7 @@ object M3uParser {
                 Kind.MOVIE -> {
                     val year = YEAR.find(e.name)?.groupValues?.get(1)?.toIntOrNull()
                     out.add(Item(e.url.hashCode().toString(), Kind.MOVIE, TitleText.title(clean(e.name)), year, e.url,
-                        attr(e.info, "tvg-logo")?.ifBlank { null }, group, quality = q, lang = kd.lang))
+                        attr(e.info, "tvg-logo")?.ifBlank { null }, group, quality = q, lang = kd.lang, addedAt = VodRecency.timestamp(attr(e.info, "added"))))
                 }
                 Kind.LIVE -> {
                     val id = e.url.hashCode().toString()
@@ -490,7 +494,7 @@ object M3uParser {
                 }
                 i = j
             }
-            out.add(Item("s_$key", Kind.SERIES, acc.title, null, "", acc.logo, acc.group, EpisodeTable.of(eps, pool), acc.q, lang = acc.lang))
+            out.add(Item("s_$key", Kind.SERIES, acc.title, null, "", acc.logo, acc.group, EpisodeTable.of(eps, pool), acc.q, lang = acc.lang, addedAt = acc.addedAt))
         }
         out.trimToSize()
         return ParsedPlaylist(out, epgFromHeader(header), st.counts(), st.bytes, catchup)

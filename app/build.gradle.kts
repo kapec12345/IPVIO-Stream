@@ -36,8 +36,8 @@ android {
         minSdk = 24
         targetSdk = 37
         // Raise both for every release; the GitHub release tag must match versionName (e.g. tag "v1.1").
-        versionCode = 8
-        versionName = "1.4.3-pl"
+        versionCode = 19
+        versionName = "1.4.14-pl"
         // Name under the icon; the debug build overrides it (see buildTypes)
         manifestPlaceholders["appLabel"] = "IPVIO Stream"
 
@@ -60,8 +60,10 @@ android {
         // Test build (Run in Android Studio / debug APK): own app ID, so the private IPVIO app on the TV
         // is not overwritten. Both apps can be installed side by side (own data, own name).
         debug {
-            applicationIdSuffix = ".test"
-            manifestPlaceholders["appLabel"] = "IPVIO Stream"
+            // A separate TV preview can coexist with the user's installed, differently signed test build.
+            val vodPreview = providers.gradleProperty("vodPreview").orNull == "true"
+            applicationIdSuffix = if (vodPreview) ".vodpreview" else ".test"
+            manifestPlaceholders["appLabel"] = if (vodPreview) "IPVIO Podgląd" else "IPVIO Stream"
         }
         release {
             if (hasKeystore) signingConfig = signingConfigs.getByName("release")

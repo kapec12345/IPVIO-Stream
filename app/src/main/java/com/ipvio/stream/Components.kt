@@ -151,13 +151,13 @@ fun cardPoster(url: String): String = url.replace("/t/p/w500/", "/t/p/w342/")
 fun PosterCard(
     item: Item, onClick: () -> Unit, modifier: Modifier = Modifier,
     progress: Float? = null, subtitle: String? = null,
-    fixedPosterHeight: Dp? = null, onFocus: () -> Unit = {}, titleLines: Int = 1
+    fixedPosterHeight: Dp? = null, onFocus: () -> Unit = {}, titleLines: Int = if (Look.vod) 2 else 1
 ) {
     val st = rememberMetaState(item)
     val m = st.meta
     var f by remember { mutableStateOf(false) }
     val s by animateFloatAsState(if (f) focusScale(1.08f) else 1f, label = "poster")
-    val border by animateColorAsState(if (f) Accent2 else Color.Transparent, label = "pborder")
+    val border by animateColorAsState(if (Look.vod) (if (f) Color.White else Tok.Line) else (if (f) Accent2 else Color.Transparent), label = "pborder")
     val shape = RoundedCornerShape(DS.RadiusM)
     val live = item.kind == Kind.LIVE
     val img: String? = when {
@@ -179,12 +179,13 @@ fun PosterCard(
         Box(
             posterMod.focusGlow(f, shape).clip(shape)
                 .background(Brush.linearGradient(listOf(colorFor(item).copy(alpha = .75f), Surf2)))
-                .border(DS.FocusBorder, border, shape),
+                .border(if (f) 3.dp else 1.dp, border, shape),
             contentAlignment = Alignment.Center
         ) {
             // Round 17: placeholder (gradient, initials, icon, title) below the image, stays visible if it is missing or does not load
-            if ((!live && (st.done || img != null)) || (live && img == null && st.done)) ArtPlaceholder(item, Modifier.fillMaxSize())
-            if (img != null) ArtImage(
+            if ((!live && (st.done || img != null)) || (live && img == null && st.done)) ArtPlaceholder(item, Modifier.fillMaxSize(), showTitle = false)
+            if (Look.vod && !live) KinoPoster(item, m?.poster, Modifier.fillMaxSize())
+            else if (img != null) ArtImage(
                 img, item.title,
                 if (live) Modifier.fillMaxSize().padding(20.dp) else Modifier.fillMaxSize(),
                 contentScale = if (live) ContentScale.Fit else ContentScale.Crop
@@ -194,7 +195,8 @@ fun PosterCard(
                 if (item.kind != Kind.SERIES && DeadLinks.isDead(item.url)) Badge("Gestört", DS.Scrim, DS.Gold, AIcon.Warning) else Badge(kindLabel(item.kind), DS.Scrim)
             }
             qualityOf(item)?.let { Box(Modifier.align(Alignment.TopEnd).padding(8.dp)) { QualityBadge(it) } }
-            m?.rating?.let {
+            KinoPosterInfo(item, m?.year, Modifier.padding(top = 36.dp))
+            if (!Look.vod || item.kind == Kind.LIVE) m?.rating?.let {
                 Box(Modifier.align(Alignment.BottomEnd).padding(8.dp)) {
                     RatingBadge(it)
                 }
@@ -206,51 +208,51 @@ fun PosterCard(
                 }
             }
         }
-        Text(raw = true, text = item.title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = titleLines,
+        Text(raw = true, text = item.title, color = Color.White, fontSize = if (Look.vod) 18.sp else 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.Bold, maxLines = titleLines,
             overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
         val sub = subtitle ?: when (item.kind) {
             Kind.SERIES -> seriesInfo(item)
             Kind.MOVIE -> m?.year ?: item.year?.toString() ?: "Film"
             Kind.LIVE -> item.group
         }
-        Text(sub, color = Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(sub, color = Tok.TextMid, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
 @Composable
-fun LiveCard(item: Item, onClick: () -> Unit, modifier: Modifier = Modifier, onLong: (() -> Unit)? = null) {
+fun LiveCard(item: Item, onClick: () -> Unit, modifier: Modifier = Modifier, onLong: (() -> Unit)? = null, showLiveBadge: Boolean = true) {
     val ctx = LocalContext.current
     var f by remember { mutableStateOf(false) }
-    val s by animateFloatAsState(if (f) focusScale(1.08f) else 1f, label = "live")
-    val border by animateColorAsState(if (f) Accent2 else Color.Transparent, label = "lborder")
+    val s by animateFloatAsState(if (f) focusScale(if (Look.vod) 1.035f else 1.08f) else 1f, label = "live")
+    val border by animateColorAsState(if (Look.vod) (if (f) Color.White else Tok.Line) else (if (f) Accent2 else Color.Transparent), label = "lborder")
     val shape = RoundedCornerShape(DS.RadiusM)
     Column(
         modifier.graphicsLayer { scaleX = s; scaleY = s }
             .focusGlow(f, shape)
             .clip(shape).background(Surf)
-            .border(DS.FocusBorder, border, shape)
+            .border(if (f) 3.dp else 1.dp, border, shape)
             .onFocusChanged { f = it.isFocused }
             // Long OK: toggles the favorite, unless the row gives its own action (e.g. remove from "Recently watched")
             .favKeys { if (onLong != null) onLong() else Library.toggleFav(ctx, item.id) }
             .clickable(onClick = onClick)
     ) {
         Box(
-            Modifier.fillMaxWidth().height(110.dp)
-                .background(Brush.linearGradient(listOf(colorFor(item).copy(alpha = .8f), Surf2))),
+            Modifier.fillMaxWidth().height(if (Look.vod) 88.dp else 110.dp)
+                .background(Brush.linearGradient(if (Look.vod) listOf(Color(0xFFB4C1CC), Color(0xFFE0E6EA)) else listOf(colorFor(item).copy(alpha = .8f), Surf2))),
             contentAlignment = Alignment.Center
         ) {
-            if (item.logo != null) ArtImage(item.logo, item.title, Modifier.fillMaxSize().padding(20.dp), contentScale = ContentScale.Fit)
-            else Text(raw = true, text = item.title.take(2).uppercase(), color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold)
-            Text("LIVE", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.align(Alignment.TopStart).padding(10.dp).clip(RoundedCornerShape(DS.RadiusXs))
-                    .background(Color(0xFFFF3B5C)).padding(horizontal = 7.dp, vertical = 2.dp))
+            if (item.logo != null) ArtImage(item.logo, item.title, Modifier.fillMaxSize().padding(horizontal = 38.dp, vertical = 14.dp), contentScale = ContentScale.Fit)
+            else Text(raw = true, text = initialsOf(item.title), color = if (Look.vod) Color(0xFF1B2839) else Color.White, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold)
+            if (showLiveBadge) Text("LIVE", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.TopStart).padding(6.dp).clip(RoundedCornerShape(DS.RadiusXs))
+                    .background(Color(0xFF912A43)).padding(horizontal = 6.dp, vertical = 2.dp))
             if (Library.isFav(item.id)) AppIcon(AIcon.Star, DS.Gold, Modifier.align(Alignment.TopEnd).padding(10.dp), 20.dp)
             else qualityOf(item)?.let { Box(Modifier.align(Alignment.TopEnd).padding(8.dp)) { QualityBadge(it) } }
             if (DeadLinks.isDead(item.url)) AppIcon(AIcon.Warning, DS.Gold, Modifier.align(Alignment.BottomEnd).padding(8.dp), 20.dp)
         }
         Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-            Text(raw = true, text = item.title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(raw = true, text = item.group, color = Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(raw = true, text = item.title, color = Color.White, fontSize = if (Look.vod) 19.sp else 15.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold, minLines = if (Look.vod) 2 else 1, maxLines = if (Look.vod) 2 else 1, overflow = TextOverflow.Ellipsis)
+            Text(raw = true, text = item.group, color = Tok.TextMid, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

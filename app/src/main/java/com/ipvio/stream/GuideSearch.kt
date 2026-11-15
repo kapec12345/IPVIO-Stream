@@ -45,11 +45,11 @@ object GuideSearchLogic {
         val words = q.split(' ').filter { it.isNotEmpty() }
         val out = ArrayList<Hit>()
         for (c in ChannelSearch.filter(channels, query).take(maxChannels)) {
-            out.add(Hit(c, null, Xmltv.forChannel(c.tvgId).firstOrNull { it.start <= nowSec && nowSec < it.end }))
+            out.add(Hit(c, null, Xmltv.forChannel(c).firstOrNull { it.start <= nowSec && nowSec < it.end }))
         }
         val shows = ArrayList<Hit>()
         for (c in channels) {
-            for (e in Xmltv.forChannel(c.tvgId)) {
+            for (e in Xmltv.forChannel(c)) {
                 if (e.end <= nowSec - 3600) continue
                 val t = ChannelSearch.norm(e.title)
                 if (words.all { it in t }) shows.add(Hit(c, e))
@@ -69,7 +69,7 @@ fun GuideSearchDialog(channels: List<Item>, onPick: (Item) -> Unit, onClose: () 
     val kbFirst = remember { FocusRequester() }
     // With the device keyboard setting the text field gets the focus (OK opens Gboard & co.), otherwise the app keyboard
     LaunchedEffect(Unit) { delay(150); runCatching { (if (AppSettings.systemKeyboard) fr else kbFirst).requestFocus() } }
-    val hits by produceState(emptyList<GuideSearchLogic.Hit>(), q) {
+    val hits by produceState(emptyList<GuideSearchLogic.Hit>(), q, Xmltv.revision) {
         if (q.isBlank()) { value = emptyList(); return@produceState }
         delay(250)
         value = withContext(Dispatchers.Default) { GuideSearchLogic.search(channels, q, System.currentTimeMillis() / 1000) }
@@ -98,7 +98,8 @@ fun GuideSearchDialog(channels: List<Item>, onPick: (Item) -> Unit, onClose: () 
                     var f by remember { mutableStateOf(false) }
                     val e = h.entry
                     // Channel hit: what runs right now. XMLTV first (h.now), otherwise the cached/Xtream lookup (only for rows that are on screen)
-                    val nowShow by produceState(h.now, h.channel.id) {
+                    val nowShow by produceState(h.now, h.channel.id, Xmltv.revision) {
+                        value = h.now
                         if (e == null && value == null) value = runCatching { Epg.current(Epg.now(h.channel)) }.getOrNull()
                     }
                     Column(

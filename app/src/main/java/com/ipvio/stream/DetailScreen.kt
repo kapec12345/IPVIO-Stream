@@ -419,7 +419,13 @@ private fun DetailScreenFull(
     Box(Modifier.fillMaxSize().background(Bg)) {
         // Round 15: layout like the big picture of the home screen (image on the right, faded into the background at the left and bottom)
         // 17c: calm background image (the constant zoom cost too much computing time on the Fire TV)
-        meta?.backdrop?.let { AsyncImage(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, alignment = Alignment.TopEnd) }
+        if (meta?.backdrop != null) {
+            AsyncImage(meta?.backdrop, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, alignment = Alignment.TopEnd)
+        } else if (Look.vod) {
+            val coverArea = Modifier.align(Alignment.TopEnd).fillMaxHeight(.68f).fillMaxWidth(.40f)
+            if (Look.vod && item.kind != Kind.LIVE) KinoPoster(item, meta?.poster, coverArea)
+            else (meta?.poster ?: item.logo)?.let { ArtImage(it, null, coverArea, contentScale = ContentScale.Fit) }
+        }
         Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Bg, 0.3f to Bg.copy(alpha = .92f), 0.55f to Bg.copy(alpha = .5f), 0.8f to Color.Transparent)))
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Bg.copy(alpha = .5f), 0.2f to Color.Transparent, 0.55f to Bg.copy(alpha = .78f), 0.8f to Bg)))
         LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(horizontal = 28.dp, vertical = 36.dp)) {
@@ -450,7 +456,10 @@ private fun DetailScreenFull(
                         }
                         Text(raw = true, text = item.title, color = Tok.TextHi, fontSize = spx(84), lineHeight = spx(84), fontWeight = FontWeight.ExtraBold,
                             letterSpacing = (-1.5).sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        HeroMetaLine(item, meta, dots = false)
+                        HeroMetaLine(item, meta, dots = false, inlineFilmweb = false)
+                        if (item.kind != Kind.LIVE && !DemoMode.active) {
+                            FilmwebRatingLabel(item, meta?.year?.toIntOrNull(), metaDone, showActions)
+                        }
                         // Movie started: small progress bar with remaining time
                         if (item.kind != Kind.SERIES && resume != null && resume.dur > 0 && !ResumeLogic.finished(resume.pos, resume.dur)) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(10))) {
@@ -471,7 +480,7 @@ private fun DetailScreenFull(
                         } else Text(
                             raw = meta?.overview != null,
                             text = meta?.overview ?: if (MetaRepo.usable(item)) "Keine Beschreibung gefunden." else "Tipp: Unter Einstellungen > API-Schlüssel einen eigenen TMDB-Schlüssel eintragen, dann erscheinen hier Beschreibung, Cover und Bewertungen.",
-                            color = Tok.TextMid, fontSize = spx(17), lineHeight = spx(25),
+                            color = Tok.TextMid, fontSize = spx(if (Look.vod) 22 else 17), lineHeight = spx(if (Look.vod) 30 else 25),
                             // Short and medium descriptions (up to about 800 characters) are shown completely, without "Read more".
                             // In the cinema preview (without buttons) it is at most 6 lines.
                             maxLines = if (descExpanded || (showActions && (meta?.overview?.length ?: 0) <= FULL_TEXT_CHARS)) Int.MAX_VALUE
@@ -737,14 +746,14 @@ private fun DetailScreenFull(
 private fun EpisodeRow(ep: Episode, em: EpMeta?, v: Variant, prog: ResumeLogic.EpPos?, modifier: Modifier, onFocus: () -> Unit, onToggleSeen: () -> Unit, onClick: () -> Unit) {
     var f by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(dpx(16))
-    // Round 17b: the selected episode floats forward (glass, shadow, slightly larger) instead of a white frame; the others stay calm
+    // A bright border makes the selected episode visible over either stills or a plain background.
     val sc by androidx.compose.animation.core.animateFloatAsState(if (f) focusScale(1.02f) else 1f, label = "ep")
     Row(
         modifier.fillMaxWidth().padding(vertical = dpx(6))
             .graphicsLayer { scaleX = sc; scaleY = sc; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f) }
             .then(if (f) Modifier.shadow(dpx(24), shape, ambientColor = Tok.Lift, spotColor = Tok.Lift) else Modifier)
             .clip(shape).background(if (f) Color(0x1FFFFFFF) else Color(0x08FFFFFF))
-            .border(1.dp, if (f) Color(0x33FFFFFF) else Color.Transparent, shape)
+            .border(if (f && Look.vod) 3.dp else 1.dp, if (f) Look.posterFocus else Tok.Line, shape)
             .onFocusChanged { f = it.isFocused; if (it.isFocused) onFocus() }
             .favKeys(onToggleSeen)
             .clickable(onClick = onClick)
@@ -770,11 +779,11 @@ private fun EpisodeRow(ep: Episode, em: EpMeta?, v: Variant, prog: ResumeLogic.E
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(raw = true, text = "${ep.num}. ${em?.name ?: ep.title}", color = if (f) Tok.TextHi else Tok.TextMid, fontSize = spx(if (f) 26 else 24), fontWeight = FontWeight.Bold,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                Text(raw = true, text = "${ep.num}. ${em?.name ?: ep.title}", color = Tok.TextHi, fontSize = spx(if (Look.vod) 27 else 24), fontWeight = FontWeight.Bold,
+                    maxLines = if (Look.vod) 2 else 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 v.quality?.let { QualityBadge(it) }
                 em?.imdb?.let { Badge("IMDb $it", Color(0xFFF5C518), Color.Black) }
-                if (em?.imdb == null) em?.rating?.let { RatingBadge(it, Color(0x26FFFFFF)) }
+                if (!Look.vod && em?.imdb == null) em?.rating?.let { RatingBadge(it, Color(0x26FFFFFF)) }
                 em?.runtime?.let { Badge("$it Min") }
             }
             em?.air?.let { Text(raw = true, text = it, color = Muted, fontSize = spx(16)) }
@@ -791,12 +800,13 @@ private fun SeasonEntry(season: Int, count: Int, selected: Boolean, modifier: Mo
     val shape = RoundedCornerShape(dpx(12))
     Row(
         modifier.fillMaxWidth().clip(shape)
-            // Round 17b: shown season with a green shimmer, selected one as light glass (no white frame)
+            // The tint marks the displayed season; a separate border marks remote focus.
             .background(
                 if (f) Brush.horizontalGradient(listOf(Color(0x2EFFFFFF), Color(0x14FFFFFF)))
                 else if (selected) Brush.horizontalGradient(listOf(Accent1.copy(alpha = 0.18f), Color.Transparent))
                 else Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent))
             )
+            .border(if (f && Look.vod) 3.dp else 1.dp, if (f && Look.vod) Color.White else Color.Transparent, shape)
             .onFocusChanged { f = it.isFocused }
             .onPreviewKeyEvent { ev ->
                 if (ev.type == KeyEventType.KeyDown && ev.key == Key.DirectionRight) { if (ev.nativeKeyEvent.repeatCount == 0) onRight(); true } else false

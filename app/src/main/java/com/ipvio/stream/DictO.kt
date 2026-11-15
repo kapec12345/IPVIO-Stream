@@ -59,4 +59,33 @@ Setzt alle Einstellungen auf die Standardwerte zurück: Ansicht, Design, Menü, 
 Nur eine Seite zurücksetzen? Jede Einstellungsseite hat unten ihren eigenen Zurücksetzen-Knopf.¦Reset just one page? Every settings page has its own reset button at the bottom.¦Yalnızca bir sayfayı mı sıfırlamak istiyorsunuz? Her ayar sayfasının altında kendi sıfırlama düğmesi var.¦Želiš vratiti samo jednu stranicu? Svaka stranica postavki ima vlastiti gumb za vraćanje na dnu.¦¦¦¿Solo quieres restablecer una página? Cada página de ajustes tiene su propio botón de restablecer al final.¦Tu veux réinitialiser une seule page ? Chaque page de réglages a son propre bouton de réinitialisation en bas.¦Vuoi ripristinare solo una pagina? Ogni pagina delle impostazioni ha il proprio pulsante di ripristino in fondo.
 # Short form of an existing hint (the code no longer has the second sentence)
 Beim Markieren einer Auswahl zeigt die Vorschau sofort die Wirkung, OK übernimmt sie.¦When you highlight an option the preview shows the effect right away, OK applies it.¦Bir seçeneği işaretlediğinde önizleme etkiyi hemen gösterir, OK uygular.¦Kad označiš opciju, pregled odmah pokazuje efekat, OK je primjenjuje.¦Kad označiš opciju, pregled odmah pokazuje učinak, OK je primjenjuje.¦Kad označiš opciju, pregled odmah pokazuje efekat, OK je primenjuje.¦Al marcar una opción la vista previa muestra el efecto al instante, OK la aplica.¦Quand tu sélectionnes une option, l’aperçu montre l’effet tout de suite, OK l’applique.¦Quando evidenzi un’opzione l’anteprima mostra subito l’effetto, OK la applica.
+Kataloglayout¦Catalogue layout
+Klassisch¦Classic
+Meine Designs¦My styles
+Wähle ein Layout und stelle unten Farben, Hintergrund, Größe und Animationen ein. Speichere die Kombination unter einem Namen.¦Choose a layout and adjust the colors, background, scale and motion below. Save the combination under a name.
+Als neues Design speichern¦Save as a new style
+Designname¦Style name
+Gib einen eindeutigen Namen ein.¦Enter a unique name.
+Das gewählte Design wurde angepasst.¦The selected style has been modified.
+Änderungen im Design speichern¦Save changes to this style
+Design umbenennen¦Rename style
+Design löschen¦Delete style
+Gewähltes Design¦Selected style
+Filmweb: höchste zuerst¦Filmweb — highest first
+Filmweb: niedrigste zuerst¦Filmweb — lowest first
+Produktionsjahr: neueste zuerst¦Production year — newest first
+Produktionsjahr: älteste zuerst¦Production year — oldest first
+Sortierung aktualisieren¦Refresh order
+Zuletzt geschaute Filme¦Recently watched movies
+Folge fortsetzen¦Continue episode
+Zuletzt geschaute Serien¦Recently watched series
+Hier erscheinen deine gestarteten Filme.¦Movies appear here when you start watching.
+Hier erscheinen Serien, sobald du eine Folge startest.¦Series appear here when you start watching an episode.
+Fehlendes Programm polnischer Sender anhand des Sendernamens ergänzen.¦Fill gaps in Polish TV listings by matching the channel name.
+IMDb-Wertung derzeit nicht verfügbar¦IMDb rating temporarily unavailable
+Keine bestätigte Bewertung bei Filmweb oder IMDb¦No confirmed rating on Filmweb or IMDb
+Stimmen¦Votes
+Filmweb: Keine eindeutige Bewertung¦Filmweb: No matching rating
+Filmweb ist vorübergehend nicht erreichbar¦Filmweb is temporarily unavailable
+Filmweb-Bewertung wird geladen¦Loading Filmweb rating
 """

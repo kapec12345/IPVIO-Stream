@@ -33,7 +33,8 @@ data class Meta(
     /** Language in which description and genres were loaded */
     val uiLang: String = "de",
     /** Match checked when opening the detail page (name/seasons, see [MatchLogic]). */
-    val checked: Boolean = false
+    val checked: Boolean = false,
+    val originalTitle: String? = null
 ) {
     /** Rating for sorting and filtering (0 to 10): first IMDb, then Rotten Tomatoes, then TMDB, last the provider's value. */
     fun score(): Double? =
@@ -110,7 +111,7 @@ object MetaRepo {
                             (j.str("gids") ?: "").split(",").mapNotNull { it.toIntOrNull() },
                             j.str("lang"), votes = j.optInt("votes"),
                             countries = (j.str("countries") ?: "").split(",").filter { it.isNotBlank() },
-                            uiLang = j.optString("ui", "de"), checked = j.optBoolean("chk")
+                            uiLang = j.optString("ui", "de"), checked = j.optBoolean("chk"), originalTitle = j.str("originalTitle")
                         )
                         slimTs[k] = ts
                     } catch (e: Exception) {
@@ -135,7 +136,7 @@ object MetaRepo {
                     j.put("poster", m.poster); j.put("backdrop", m.backdrop)
                     j.put("rating", m.rating); j.put("year", m.year)
                     j.put("genres", m.genres.joinToString("|")); j.put("runtime", m.runtime)
-                    j.put("ext", m.extended); j.put("imdb", m.imdbRating); j.put("rt", m.rtRating)
+                    j.put("ext", m.extended); j.put("originalTitle", m.originalTitle); j.put("imdb", m.imdbRating); j.put("rt", m.rtRating)
                     j.put("gids", m.genreIds.joinToString(",")); j.put("lang", m.lang); j.put("votes", m.votes)
                     j.put("countries", m.countries.joinToString(",")); j.put("ui", m.uiLang); j.put("chk", m.checked)
                     w.write(k); w.write("\t"); w.write(j.toString()); w.write("\n")
@@ -238,6 +239,22 @@ object MetaRepo {
 
     private fun dir(c: Context): File = File(c.filesDir, "meta3").also { it.mkdirs() }
 
+    /** Reuse provider years already on disk when upgrading an existing Kino library. Called on I/O. */
+    internal fun savedProviderYears(c: Context): (Item) -> Int? {
+        val directory = dir(c)
+        val files = directory.list().orEmpty().toHashSet()
+        val seen = ConcurrentHashMap<String, Int>()
+        return { item ->
+            val file = ("P|" + key(item)).hashCode().toString()
+            if (file !in files) null else seen.getOrPut(file) {
+                runCatching {
+                    val data = JSONObject(File(directory, file).readText())
+                    if (System.currentTimeMillis() - data.optLong("ts") <= TTL) data.optInt("year") else 0
+                }.getOrDefault(0)
+            }.takeIf { it in 1880..2199 }
+        }
+    }
+
     private suspend fun save(c: Context, k: String, m: Meta) = withContext(Dispatchers.IO) {
         try {
             val j = JSONObject()
@@ -246,7 +263,7 @@ object MetaRepo {
             j.put("poster", m.poster); j.put("backdrop", m.backdrop); j.put("overview", m.overview)
             j.put("rating", m.rating); j.put("year", m.year)
             j.put("genres", m.genres.joinToString("|")); j.put("runtime", m.runtime)
-            j.put("trailer", m.trailerKey); j.put("imdbId", m.imdbId)
+            j.put("trailer", m.trailerKey); j.put("imdbId", m.imdbId); j.put("originalTitle", m.originalTitle)
             j.put("imdbRating", m.imdbRating); j.put("rt", m.rtRating); j.put("ext", m.extended)
             j.put("gids", m.genreIds.joinToString(",")); j.put("lang", m.lang); j.put("votes", m.votes)
             j.put("countries", m.countries.joinToString(",")); j.put("ui", m.uiLang)
@@ -274,7 +291,7 @@ object MetaRepo {
                 j.str("lang"), votes = j.optInt("votes"),
                 countries = (j.str("countries") ?: "").split(",").filter { it.isNotBlank() },
                 uiLang = j.optString("ui", "de"),
-                checked = j.optBoolean("chk")
+                checked = j.optBoolean("chk"), originalTitle = j.str("originalTitle")
             )
         } catch (e: Exception) {
             null
@@ -440,7 +457,8 @@ object MetaRepo {
                     ?.let { runCatching { JSONObject(it).str("overview") }.getOrNull() }?.takeIf { it.isNotBlank() }
             }
             m = b.copy(overview = ov ?: b.overview.takeIf { b.uiLang == Lang.code() }, genres = genres, runtime = runtime,
-                trailerKey = trailer, imdbId = imdb, uiLang = Lang.code(), checked = true)
+                trailerKey = trailer, imdbId = imdb, uiLang = Lang.code(), checked = true,
+                originalTitle = o.str(if (b.isTv) "original_name" else "original_title"))
         } catch (e: Exception) {
         }
         if (Config.OMDB_KEY.isNotBlank() && m.imdbId != null) {

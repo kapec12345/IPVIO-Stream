@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- K-015: Recently watched series posters show the saved episode and playback time. OK resumes directly on the shelf and in its full list. Version 1.4.14-pl (code 19).
+
+- K-014: Live TV opens the programme grid. Polish TVN Player HD stations can use their UHD schedule, and Crime and Investigation HD can use its FHD schedule. Version 1.4.13-pl (code 18).
+
+- K-013: An optional EPG.OVH guide matches Polish live channel names and fills gaps around listings from the playlist provider. Version 1.4.12-pl (code 17).
+
+- K-012: Movies without a Filmweb community score can show a labelled IMDb score on Kino posters and in details. Version 1.4.11-pl (code 16).
+
+- K-010/K-011: Kino starts with recently added movies and series, separates their viewing histories and opens live TV in a compact channel list. Version 1.4.10-pl (code 15).
+
+- K-009: Kino movie and series browsing sorts by Filmweb community score or production year in either direction. Filmweb replaces the provider score on Kino title cards and details. Version 1.4.9-pl (code 14).
+
+- K-008: In the Kino layout, movie and series posters display the release year and an explicitly labelled Filmweb community score when available. Version 1.4.8-pl (code 13).
+
+- K-007: Movie and series details show the Filmweb community rating and vote count. A title search is limited to the selected production, with media type and available release year checked before a rating is shown. Version 1.4.7-pl (code 12).
+
+- K-006: Kino movie and series cards choose full-size covers and fit smaller artwork inside the tile. Version 1.4.6-pl (code 11).
+
+- K-005: Choose Classic or VOD in the app and create, recall, update, rename or remove profile-specific named looks. Version 1.4.5-pl (code 10).
+
+- K-004: TV browsing uses a focused live-program banner, clearer channel cards, persistent poster captions and larger row titles. Movies and Series keep their featured titles with playlist-only artwork. Search, favorites and episode selection now share clearer text and focus styling. The optional debug preview installs alongside the normal app. Version 1.4.4-pl (code 9).
+
 - K-003: Polish interface with 1,892 dictionary entries, automatic Polish device-language detection, phone-page language detection and placeholder/coverage tests. Version 1.4.3-pl (code 8).
 
 - Fork setup (K-001): separate application ID `com.kapec12345.ipviostream`; built-in updates now use `kapec12345/IPVIO-Stream`. No APK release yet.

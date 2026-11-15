@@ -66,7 +66,7 @@ fun BoxScope.ArchivePanel(
     }
     var selCh by remember { mutableStateOf(current?.takeIf { Catchup.has(it) } ?: list.firstOrNull()) }
     val ch = selCh
-    val progs by produceState<List<EpgEntry>?>(null, ch?.id) { value = null; value = if (ch != null) EpgFull.archive(ch) else emptyList() }
+    val progs by produceState<List<EpgEntry>?>(null, ch?.id, Xmltv.revision) { value = null; value = if (ch != null) EpgFull.archive(ch) else emptyList() }
     val nowSec = System.currentTimeMillis() / 1000
     val today = dayLabel(nowSec)
     val yesterday = dayLabel(nowSec - 86400)

@@ -54,7 +54,7 @@ object MultiLogic {
                             // Never mix placeholders (episodes only on opening) as an "episode" with real episodes: then the source with real episodes counts
                             val la = XtreamLogic.isLazy(a) || StalkerLogic.isLazy(a)
                             val lb = XtreamLogic.isLazy(it0) || StalkerLogic.isLazy(it0)
-                            out[at] = a.copy(episodes = when {
+                            out[at] = a.copy(addedAt = maxOf(a.addedAt, it0.addedAt), episodes = when {
                                 la && !lb -> it0.episodes
                                 !la && lb -> a.episodes
                                 else -> mergeEpisodes(a.episodes, it0.episodes, name, pool)

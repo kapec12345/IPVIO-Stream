@@ -108,7 +108,8 @@ private class HomeData(
     val topM: List<Item>, val topS: List<Item>, val byId: Map<String, Item>, val trendItems: List<Item>,
     val genresOk: Boolean,
     /** Movies/series for the home rows: without adult titles when Parental control > "never on the home pages" is on. */
-    val rowMovies: List<Item> = movies, val rowSeries: List<Item> = series
+    val rowMovies: List<Item> = movies, val rowSeries: List<Item> = series,
+    val newestMovies: List<Item> = emptyList(), val newestSeries: List<Item> = emptyList()
 )
 
 private fun buildHome(all: List<Item>, ipvioWanted: Boolean, trend: Set<String>, noAdult: Boolean = false): HomeData {
@@ -129,7 +130,8 @@ private fun buildHome(all: List<Item>, ipvioWanted: Boolean, trend: Set<String>,
     return HomeData(
         live, movies, series, providerGroups(live), movieP, seriesP,
         if (ipvio) ipvioGroups(rm) else rowMP, if (ipvio) ipvioGroups(rs) else rowSP,
-        topRated(rm), topRated(rs), all.associateBy { it.id }, trendItems, genresOk, rm, rs
+        topRated(rm), topRated(rs), all.associateBy { it.id }, trendItems, genresOk, rm, rs,
+        PlaylistLogic.firstPerKey(VodRecency.newest(movies0)) { it.mk + "|" + it.lang }, VodRecency.newest(series)
     )
 }
 
@@ -154,7 +156,7 @@ private fun keepLiveLists(d: HomeData, prev: HomeData?): HomeData {
     val liveP = if (d.liveP.size == prev.liveP.size && d.liveP.keys.zip(prev.liveP.keys).all { (a, b) -> a == b } &&
         d.liveP.all { (k, l) -> sameItems(l, prev.liveP[k]) }) prev.liveP else d.liveP
     if (live === d.live && liveP === d.liveP) return d
-    return HomeData(live, d.movies, d.series, liveP, d.movieP, d.seriesP, d.movieG, d.seriesG, d.topM, d.topS, d.byId, d.trendItems, d.genresOk, d.rowMovies, d.rowSeries)
+    return HomeData(live, d.movies, d.series, liveP, d.movieP, d.seriesP, d.movieG, d.seriesG, d.topM, d.topS, d.byId, d.trendItems, d.genresOk, d.rowMovies, d.rowSeries, d.newestMovies, d.newestSeries)
 }
 
 private fun sameItems(a: List<Item>, b: List<Item>?): Boolean {
@@ -211,8 +213,8 @@ private fun topRated(list: List<Item>): List<Item> =
 fun HomeScreen(
     tab: Int, onTab: (Int) -> Unit, states: List<LazyListState>,
     onOpen: (Item) -> Unit, onPlayNow: (Item) -> Unit,
-    onResume: (Entry, Item) -> Unit, onBrowse: (BrowseReq) -> Unit,
-    onCategories: (CatReq) -> Unit, onAdd: () -> Unit
+    onResume: (Entry, Item) -> Unit, onHistoryEpisode: (Entry, Item) -> Unit, onBrowse: (BrowseReq) -> Unit,
+    onCategories: (CatReq) -> Unit, onAdd: () -> Unit, onArchive: (Item, EpgEntry) -> Unit
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -251,8 +253,20 @@ fun HomeScreen(
     val ignVer = IgnoredGroups.version
     val movieG = remember(data.movieG, data.movieP, catVer, ignVer) { orderedGroups(data.movieG, data.movieP, CatOrder.MOVIE, Kind.MOVIE) }
     val seriesG = remember(data.seriesG, data.seriesP, catVer, ignVer) { orderedGroups(data.seriesG, data.seriesP, CatOrder.SERIES, Kind.SERIES) }
-    val topM = data.topM
-    val topS = data.topS
+    val kino = Look.vod && !DemoMode.active
+    var rankRevision by remember(data, kino) { mutableIntStateOf(FilmwebStore.revision.value) }
+    LaunchedEffect(data, kino) {
+        if (kino) while (true) { delay(45_000); rankRevision = FilmwebStore.revision.value }
+    }
+    val ranked by produceState<Pair<List<Item>, List<Item>>?>(null, data, kino, rankRevision) {
+        value = if (kino) withContext(Dispatchers.IO) {
+            val store = FilmwebStore.open(ctx)
+            fun best(items: List<Item>) = KinoCatalog.read(store, items).ranked(items)
+            best(data.rowMovies) to best(data.rowSeries)
+        } else null
+    }
+    val topM = if (kino) ranked?.first.orEmpty() else data.topM
+    val topS = if (kino) ranked?.second.orEmpty() else data.topS
     val byId = data.byId
     val cardW = AppSettings.cardW
     // Adult titles never show up in the history rows (home, movie/series tab, history page), independent of the parental switch
@@ -268,8 +282,10 @@ fun HomeScreen(
     val rowMovies = data.rowMovies
     val rowSeries = data.rowSeries
     // Row lists that were built anew inside the rows on every recomposition
-    val newMovies = remember(rowMovies) { rowMovies.takeLast(40).reversed() }
-    val newSeries = remember(rowSeries) { rowSeries.takeLast(40).reversed() }
+    val latestHomeMovies = remember(data, noAdult) { homeSafe(data.newestMovies, noAdult) }
+    val latestHomeSeries = remember(data, noAdult) { homeSafe(data.newestSeries, noAdult) }
+    val newMovies = remember(latestHomeMovies, rowMovies, kino) { if (kino) latestHomeMovies.take(40) else rowMovies.takeLast(40).reversed() }
+    val newSeries = remember(latestHomeSeries, rowSeries, kino) { if (kino) latestHomeSeries.take(40) else rowSeries.takeLast(40).reversed() }
     val histTop = remember(histHome) { histHome.take(30) }
     val trendItems = data.trendItems
     val trendTop = remember(trendItems) { trendItems.take(10) }
@@ -307,20 +323,25 @@ fun HomeScreen(
 
     // Header (search, reminders, profile) and quick access as in the design
     var picker by remember { mutableStateOf(false) }
-    val ready = remember { mutableStateListOf<Item>() }
     // Also use the sizes of movies/series as a key: if the computed home screen arrives only after the list (and without trend titles,
     // i.e. the same empty trend list), the selection stayed empty and the big picture was missing.
-    val candidates = remember(all, trendItems, rowMovies.size, rowSeries.size, tab) {
-        when (tab) {
+    val candidates = remember(newMovies, newSeries, kino, trendItems, rowMovies, rowSeries, tab) {
+        if (kino) when (tab) {
+            1 -> newMovies.take(6)
+            2 -> newSeries.take(6)
+            else -> VodRecency.newest(newMovies.take(6) + newSeries.take(6)).take(6)
+        } else when (tab) {
             1 -> (trendItems.filter { it.kind == Kind.MOVIE }.take(8) + rowMovies.takeLast(30).reversed())
             2 -> (trendItems.filter { it.kind == Kind.SERIES }.take(8) + rowSeries.takeLast(30).reversed())
             else -> (trendItems.take(8) + rowMovies.takeLast(25).reversed() + rowSeries.takeLast(15).reversed())
         }.distinctBy { it.id }
     }
+    val ready = remember(candidates, tab) { mutableStateListOf<Item>() }
+    val featured = if (Look.vod && (kino || ready.isEmpty())) candidates.take(6) else ready.toList()
     // Movies/series: tabs at the top next to the search (instead of the big buttons under the picture)
     val isVod = tab == 1 || tab == 2
-    val vodBase = if (tab == 1) movies else series
-    val vodTop = if (tab == 1) topM else topS
+    val vodBase = if (kino) (if (tab == 1) data.newestMovies else data.newestSeries) else (if (tab == 1) movies else series)
+    val vodTop = if (kino) (if (tab == 1) data.rowMovies else data.rowSeries) else (if (tab == 1) topM else topS)
     val vodNoun = if (tab == 1) "Filme" else "Serien"
     val openCats: () -> Unit = {
         scope.launch {
@@ -365,9 +386,9 @@ fun HomeScreen(
         }
     }
     val navTabs = if (!isVod) emptyList() else listOf(
+        HeaderTab("Neu hinzugefügt", AIcon.Sparkle, "tb:new$tab") { onBrowse(BrowseReq("Neu hinzugefügt · $vodNoun", vodBase, SORT_NEW)) },
         HeaderTab("Kategorien", AIcon.Categories, "tb:cats$tab") { openCats() },
         HeaderTab("Top bewertet", AIcon.Star, "tb:top$tab") { onBrowse(BrowseReq("Top bewertet · $vodNoun", vodTop, SORT_RATING)) },
-        HeaderTab("Neu hinzugefügt", AIcon.Sparkle, "tb:new$tab") { onBrowse(BrowseReq("Neu hinzugefügt · $vodNoun", vodBase, SORT_NEW)) },
         HeaderTab("Alle $vodNoun", AIcon.Grid, "tb:all$tab") { onBrowse(BrowseReq("Alle $vodNoun", vodBase, SORT_NEW)) }
     ) + importedTabs.map { (src, l, id) -> HeaderTab(src, AIcon.Download, id) { onBrowse(BrowseReq("$src · $vodNoun", l, SORT_NEW)) } }
     var inHeader by remember { mutableStateOf(false) }
@@ -384,7 +405,7 @@ fun HomeScreen(
             // Round 20: the View button is gone (now in Settings > View), only bell and profile at the top right
             showView = false,
             // Without a big picture (no title images yet): the first tab is the target from the sidebar
-            firstIsContent = isVod && ready.isEmpty()
+            firstIsContent = isVod && featured.isEmpty()
         )
     }
     // Tiles with real images from the own library (round 15): scene image of a top title per area,
@@ -416,7 +437,8 @@ fun HomeScreen(
     )
     DisposableEffect(Unit) { onDispose { HomeReturn.returning = true } }
 
-    LaunchedEffect(candidates) {
+    LaunchedEffect(candidates, tab, kino) {
+        if (kino) return@LaunchedEffect
         // Switching between Home / Movies / Series: the big picture of this area is taken over at once instead of
         // vanishing and being looked up title by title again
         val ids = candidates.map { it.id }
@@ -461,12 +483,12 @@ fun HomeScreen(
     // App start: focus on "Watch now" instead of the sidebar. The top picture appears only once playlist and info are loaded
     // (can take a few seconds); so it retries for up to 15 s, and the marker is set only on success.
     // After 3 s only while focus is still in the sidebar (if the user has already chosen, nothing is stolen).
-    LaunchedEffect(ready.isNotEmpty(), tab) {
+    LaunchedEffect(featured.isNotEmpty(), tab) {
         if (tab != 0 || HomeFlags.heroDone || LastFocus.pending != null) return@LaunchedEffect
         var waited = 0
         while (waited < 45000) {
             delay(150); waited += 150
-            if (ready.isEmpty() && waited < 6000) continue
+            if (featured.isEmpty() && waited < 6000) continue
             if (waited > 3000 && !inSidebar) return@LaunchedEffect
             if (runCatching { ContentFocus.req.requestFocus() }.getOrDefault(false)) { HomeFlags.heroDone = true; return@LaunchedEffect }
         }
@@ -568,7 +590,7 @@ fun HomeScreen(
         if (bbTab) BillboardLayer(bbA, bbItemState, Modifier.padding(start = SideStart + dpx(56), top = dpx(64) + (if (SidebarPrefs.pos == SidebarPrefs.TOP) TopBarH else 0.dp)))
         BoxWithConstraints(Modifier.fillMaxSize().sidebarPad()) {
             // Card widths and height of the big picture from the available space (as in the design: everything at a glance)
-            val grid = remember(maxWidth, Design.k, General.cardSize) { cardGrid(maxWidth - RowPadX * 2) }
+            val grid = remember(maxWidth, Design.k, General.cardSize, Look.vod) { cardGrid(maxWidth - RowPadX * 2) }
             // Design: big picture 420 px high (start), 345 px (movies/series)
             val heroH = dpx(if (tab == 0) 540 else 450)
             val keepSettings = AddFlowLogic.keepsSettingsPage(tab, PlaylistStore.lists.isNotEmpty())
@@ -601,7 +623,19 @@ fun HomeScreen(
                         }
                     }
                 }
-                tab == 3 -> LiveTab(live, liveP, favLive, onOpen, onPlayNow)
+                tab == 3 -> {
+                    if (live.isEmpty()) EmptyHint("Noch keine Sender") else {
+                        val startId = remember(live) {
+                            val ids = live.mapTo(HashSet()) { it.id }
+                            LastFocus.pending?.takeIf { it in ids } ?: History.ids.firstOrNull { it in ids } ?: live.first().id
+                        }
+                        BackHandler(enabled = !inSidebar) { GuideBack.handler?.invoke() }
+                        Guide(live, startId, ContentFocus.req, onClose = { sideFocus.requestFocus() },
+                            onArchive = onArchive, standalone = true, onPickIn = { ch, channels ->
+                                ZapContext.list = channels; ZapContext.key = null; onOpen(ch)
+                            }, onPick = onOpen)
+                    }
+                }
                 tab == MenuLogic.SPORT -> SportHub(live) { ch, l -> ZapContext.list = l; ZapContext.key = null; onOpen(ch) }
                 // The selected row stays in the lower half (PivotSpec); rows above are hidden so that at the top
                 // title and info of the selected title are free (billboard)
@@ -633,7 +667,7 @@ fun HomeScreen(
                                     Text("Bearbeiten: Über jeder Reihe kannst du sie verschieben oder ausblenden.", color = Muted, fontSize = 15.sp)
                                 }
                             }
-                            if (ready.isNotEmpty() && HomeLayout.shown("hero")) item(key = "hero") { Hero(ready.toList(), heroH, true, onOpen, onPlayNow, header, { heroScroll(states[0]) }) { scope.launch { states[0].animateScrollToItem(0) } } }
+                            if (featured.isNotEmpty() && HomeLayout.shown("hero")) item(key = "hero") { Hero(featured, heroH, true, onOpen, onPlayNow, header, { heroScroll(states[0]) }) { scope.launch { states[0].animateScrollToItem(0) } } }
                             else item(key = "top") { header(Modifier) }
                             val wl = wlVod
                             for (blockId in HomeLayout.order) {
@@ -658,16 +692,16 @@ fun HomeScreen(
                                     "wl" -> { if (wl.isNotEmpty()) item(key = "wl") { ItemsRow("Meine Liste", wl, cardW, onOpen) { onTab(MenuLogic.MYLIST) } } }
                                     "hist" -> { if (histHome.isNotEmpty()) item(key = "hist") { ItemsRow("Zuletzt geschaut", histTop, cardW, onOpen) { onBrowse(BrowseReq("Zuletzt geschaut", histHome, SORT_PLAYLIST)) } } }
                                     "newm" -> { if (rowMovies.isNotEmpty()) item(key = "newm") {
-                                        ItemsRow("Neu hinzugefügt · Filme", newMovies, cardW, onOpen) { onBrowse(BrowseReq("Neu hinzugefügt · Filme", rowMovies, SORT_NEW)) }
+                                        ItemsRow("Neu hinzugefügt · Filme", newMovies, cardW, onOpen) { onBrowse(BrowseReq("Neu hinzugefügt · Filme", if (kino) latestHomeMovies else rowMovies, SORT_NEW)) }
                                     } }
                                     "topm" -> { if (topM.size >= 8) item(key = "topm") {
-                                        ItemsRow("Top bewertet · Filme", topM, cardW, onOpen) { onBrowse(BrowseReq("Top bewertet · Filme", topM, SORT_RATING)) }
+                                        ItemsRow("Top bewertet · Filme", topM, cardW, onOpen) { onBrowse(BrowseReq("Top bewertet · Filme", if (kino) data.rowMovies else topM, SORT_RATING)) }
                                     } }
                                     "news" -> { if (rowSeries.isNotEmpty()) item(key = "news") {
-                                        ItemsRow("Neu hinzugefügt · Serien", newSeries, cardW, onOpen) { onBrowse(BrowseReq("Neu hinzugefügt · Serien", rowSeries, SORT_NEW)) }
+                                        ItemsRow("Neu hinzugefügt · Serien", newSeries, cardW, onOpen) { onBrowse(BrowseReq("Neu hinzugefügt · Serien", if (kino) latestHomeSeries else rowSeries, SORT_NEW)) }
                                     } }
                                     "tops" -> { if (topS.size >= 8) item(key = "tops") {
-                                        ItemsRow("Top bewertet · Serien", topS, cardW, onOpen) { onBrowse(BrowseReq("Top bewertet · Serien", topS, SORT_RATING)) }
+                                        ItemsRow("Top bewertet · Serien", topS, cardW, onOpen) { onBrowse(BrowseReq("Top bewertet · Serien", if (kino) data.rowSeries else topS, SORT_RATING)) }
                                     } }
                                     "sg" -> { seriesG.entries.take(3).forEach { (g, l) ->
                                         item(key = "s$g") { ItemsRow("Serien · $g", l, cardW, onOpen) { onBrowse(BrowseReq("Serien · $g", l, SORT_NEW)) } }
@@ -695,31 +729,42 @@ fun HomeScreen(
                             val noun = if (isM) "Filme" else "Serien"
                             val kind = if (isM) Kind.MOVIE else Kind.SERIES
                             val groups = if (isM) movieG else seriesG
-                            if (ready.isNotEmpty()) item(key = "hero$tab") { Hero(ready.toList(), heroH, false, onOpen, onPlayNow, header, { heroScroll(states[tab]) }) { scope.launch { states[tab].animateScrollToItem(0) } } }
+                            if (featured.isNotEmpty()) item(key = "hero$tab") { Hero(featured, heroH, false, onOpen, onPlayNow, header, { heroScroll(states[tab]) }) { scope.launch { states[tab].animateScrollToItem(0) } } }
                             else item(key = "top$tab") { header(Modifier) }
-                            // Popular (trending, otherwise top rated) directly under the big picture. First row:
-                            // "Show all" up = profile at the top right, left = "To list" in the picture
+                            val newItems = if (isM) newMovies else newSeries
+                            if (newItems.isNotEmpty()) item(key = "new$tab") {
+                                ItemsRow("Neu hinzugefügt", newItems, cardW, onOpen, upReq = HeaderFocus.profile,
+                                    leftReq = if (featured.isNotEmpty()) HeroFocus.second else null) {
+                                    val full = if (kino) (if (isM) latestHomeMovies else latestHomeSeries) else (if (isM) rowMovies else rowSeries)
+                                    onBrowse(BrowseReq("Neu hinzugefügt · $noun", full, SORT_NEW))
+                                }
+                            }
+                            val historyTitle = if (isM) "Zuletzt geschaute Filme" else "Zuletzt geschaute Serien"
+                            item(key = "hr$tab") {
+                                if (histK.isEmpty()) Column {
+                                    RowTitle(historyTitle, null, null, onAll = null)
+                                    EmptyHint(if (isM) "Hier erscheinen deine gestarteten Filme." else "Hier erscheinen Serien, sobald du eine Folge startest.")
+                                } else ItemsRow(historyTitle, histK, cardW, onOpen, onEpisode = if (isM) null else onHistoryEpisode) {
+                                    onBrowse(BrowseReq(historyTitle, histK, SORT_PLAYLIST, seriesHistory = !isM))
+                                }
+                            }
                             val tt = trendK
                             val pop = if (tt.size >= 5) tt else top
                             if (pop.size >= 3) item(key = "pop$tab") {
-                                ItemsRow(if (isM) "Beliebte Filme" else "Beliebte Serien", pop, cardW, onOpen,
-                                    upReq = HeaderFocus.profile, leftReq = if (ready.isNotEmpty()) HeroFocus.second else null) {
+                                ItemsRow(if (isM) "Beliebte Filme" else "Beliebte Serien", pop, cardW, onOpen) {
                                     onBrowse(BrowseReq((if (isM) "Beliebte Filme" else "Beliebte Serien"), pop, SORT_PLAYLIST))
                                 }
                             }
-                            if (base.isNotEmpty() && ready.isEmpty() && pop.size < 3) item(key = "hint$tab") { EmptyHint("Oben findest du alle $noun, Neuheiten, Top bewertet und Kategorien.") }
+                            if (base.isNotEmpty() && featured.isEmpty() && newItems.isEmpty() && pop.size < 3) item(key = "hint$tab") { EmptyHint("Oben findest du alle $noun, Neuheiten, Top bewertet und Kategorien.") }
                             val rl = resumeK
                             if (rl.isNotEmpty()) item(key = "res$tab") { ResumeRow(rl, cardW, onResume) }
                             val wl = watchK
                             if (wl.isNotEmpty()) item(key = "wl$tab") { ItemsRow("Meine Liste", wl, cardW, onOpen) { onBrowse(BrowseReq("Meine Liste · $noun", wl, SORT_PLAYLIST)) } }
-                            val recent = histK
-                            if (recent.isNotEmpty()) item(key = "hr$tab") { ItemsRow("Zuletzt geschaut", recent, cardW, onOpen) { onBrowse(BrowseReq("Zuletzt geschaut · $noun", recent, SORT_PLAYLIST)) } }
                             if (base.isEmpty()) {
                                 item { EmptyHint("Keine $noun in dieser Playlist") }
                                 item { EmptyHint(CONTENT_MODE_HINT.format(if (isM) "Filme" else "Serien", "Nur Live TV")) }
                             }
-                            if (base.isNotEmpty() && (if (isM) newMovies else newSeries).isNotEmpty()) item(key = "new$tab") { ItemsRow("Neu hinzugefügt", if (isM) newMovies else newSeries, cardW, onOpen) { onBrowse(BrowseReq("Neu hinzugefügt · $noun", if (isM) rowMovies else rowSeries, SORT_NEW)) } }
-                            if (top.size >= 8) item(key = "best$tab") { ItemsRow("Top bewertet", top, cardW, onOpen) { onBrowse(BrowseReq("Top bewertet · $noun", top, SORT_RATING)) } }
+                            if (top.size >= 8) item(key = "best$tab") { ItemsRow("Top bewertet", top, cardW, onOpen) { onBrowse(BrowseReq("Top bewertet · $noun", vodTop, SORT_RATING)) } }
                             groups.entries.take(12).forEach { (g, l) -> item(key = "G$tab$g") { ItemsRow(g, l, cardW, onOpen) { onBrowse(BrowseReq(g, l, SORT_NEW)) } } }
                             if (groups.size > 12) item { EmptyHint("Weitere Kategorien findest du unter „Kategorien“ oben.") }
 
@@ -842,7 +887,7 @@ object PillMemory {
 private fun ItemsRow(
     title: String, list: List<Item>, cardW: Int, onOpen: (Item) -> Unit,
     firstReq: FocusRequester? = null, style: Int = -1,
-    upReq: FocusRequester? = null, leftReq: FocusRequester? = null, onAll: () -> Unit
+    upReq: FocusRequester? = null, leftReq: FocusRequester? = null, onEpisode: ((Entry, Item) -> Unit)? = null, onAll: () -> Unit
 ) {
     // After "Show all" and back: focus the link of this row again
     val key = NavState.tab.toString() + "|" + title
@@ -858,7 +903,7 @@ private fun ItemsRow(
     // Picture type from "View" (default: cover); Top 10 always cover
     val st = if (style >= 0) style else if (General.cardArt == 1) CARD_LAND else CARD_POSTER
     CardRow(title, list, st, onOpen, { PillMemory.key = key; onAll() }, RowStates.get("${NavState.tab}|$title"), headerReq, firstCard,
-        upReq = upReq, leftReq = leftReq)
+        upReq = upReq, leftReq = leftReq, onEpisode = onEpisode)
 }
 
 @Composable
@@ -867,7 +912,7 @@ private fun ResumeRow(list: List<Pair<Entry, Item>>, cardW: Int, onResume: (Entr
     Column {
         val g = LocalCardGrid.current
         Row(Modifier.padding(start = dpx(29), top = dpx(26), end = dpx(28)), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(dpx(16))) {
-            Text("Weiterschauen", color = Color.White, fontSize = spx(23), fontWeight = FontWeight.Bold)
+            Text("Weiterschauen", color = Color.White, fontSize = spx(if (Look.vod) 31 else 23), fontWeight = FontWeight.Bold)
             Text("OK lange drücken = entfernen", color = Muted, fontSize = spx(13), modifier = Modifier.padding(bottom = dpx(3)))
         }
         LazyRow(
@@ -911,18 +956,20 @@ private fun WideCard(item: Item, sub: String?, progress: Float, modifier: Modifi
         Box(
             Modifier.fillMaxWidth().aspectRatio(16f / 9f).focusGlow(f, shape).clip(shape)
                 .background(Brush.linearGradient(listOf(colorFor(item).copy(alpha = .75f), Surf2)))
-                .border(DS.FocusBorder, if (f) Accent2 else Color.Transparent, shape)
+                .border(DS.FocusBorder, if (f) Color.White else Tok.Line, shape)
         ) {
-            if (img != null) ArtImage(img, item.title, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            if (Look.vod && item.kind != Kind.LIVE && m?.backdrop == null) KinoPoster(item, m?.poster, Modifier.fillMaxSize())
+            else if (img != null) ArtImage(img, item.title, Modifier.fillMaxSize(), contentScale = if (Look.vod && item.kind != Kind.LIVE) ContentScale.Inside else ContentScale.Crop)
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.45f to Color.Transparent, 1f to Color(0xDD000000))))
             AppIcon(AIcon.Play, Color.White, Modifier.align(Alignment.Center), 30.dp)
-            Text(raw = true, text = item.title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            KinoPosterInfo(item, m?.year)
+            Text(raw = true, text = item.title, color = Color.White, fontSize = if (Look.vod) 19.sp else 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold, maxLines = if (Look.vod) 2 else 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.align(Alignment.BottomStart).padding(start = 12.dp, end = 12.dp, bottom = if (progress > 0f) 14.dp else 10.dp))
             if (progress > 0f) Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(5.dp).background(Color(0x66FFFFFF))) {
                 Box(Modifier.fillMaxWidth(progress).fillMaxHeight().background(Accent2))
             }
         }
-        if (sub != null) Text(sub, color = Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp, start = 4.dp))
+        if (sub != null) Text(sub, color = Tok.TextMid, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp, start = 4.dp))
     }
 }
 
@@ -954,7 +1001,14 @@ private fun Hero(
             Box(Modifier.fillMaxSize().graphicsLayer {
                 translationY = if (Look.motion == 0) 0f else scrollY() * 0.4f
             }) {
-                m?.backdrop?.let { ArtImage(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, alignment = Alignment.TopEnd) }
+                val backdrop = m?.backdrop
+                if (backdrop != null) ArtImage(backdrop, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, alignment = Alignment.TopEnd)
+                else {
+                    ArtPlaceholder(c, Modifier.fillMaxSize(), showTitle = false)
+                    val coverArea = Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(.39f)
+                    if (Look.vod && c.kind != Kind.LIVE) KinoPoster(c, m?.poster, coverArea)
+                    else (m?.poster ?: c.logo)?.let { ArtImage(it, null, coverArea, contentScale = ContentScale.Fit) }
+                }
             }
         }
         // Gradients: left and bottom into the background, subtle at the top behind the header; plus a soft vignette
@@ -977,7 +1031,7 @@ private fun Hero(
                     )
                     HeroMetaLine(c, m, dots = !home)
                     m?.overview?.takeIf { it.isNotBlank() }?.let {
-                        Text(raw = true, text = TitleText.short(it, 250), color = Tok.TextMid, fontSize = spx(19), lineHeight = spx(27), maxLines = 3)
+                        Text(raw = true, text = TitleText.short(it, if (Look.vod) 200 else 250), color = Tok.TextMid, fontSize = spx(if (Look.vod) 22 else 19), lineHeight = spx(if (Look.vod) 29 else 27), maxLines = if (Look.vod) 2 else 3, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }

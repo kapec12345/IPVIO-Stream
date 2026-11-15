@@ -167,6 +167,8 @@ object AppSettings {
             val bg = p.getInt("look_bg", 0)
             e.putInt("look_accent", newAcc).putInt("look_bg", if (bg >= 5) Look.DEFAULT_BG else bg).remove("look_custom_was").commit()
         }
+        Look.vod = p.getBoolean("catalogue_vod", BuildConfig.APPLICATION_ID.endsWith(".vodpreview"))
+        Look.savedStyles = SavedStyles.decode(p.getString("saved_designs", null))
         Look.accentIdx = p.getInt("look_accent", Look.DEFAULT_ACCENT).coerceIn(0, Look.ACCENTS.size)
         Look.custom = p.getInt("look_custom", Look.BRAND_GREEN) and 0xFFFFFF
         Look.custom2 = p.getInt("look_custom2", -1).let { if (it < 0) -1 else it and 0xFFFFFF }
@@ -177,14 +179,27 @@ object AppSettings {
 
     /** Saves color theme, background, animation level and display size. */
     fun setLook(c: Context, accent: Int, custom: Int, bg: Int, motion: Int, scale: Int, custom2: Int = Look.custom2) {
+        applyStyle(c, Appearance(Look.vod, accent, custom, custom2, bg, motion, scale))
+    }
+
+    internal fun storeStyles(c: Context, shelf: SavedStyles) {
+        prefs(c).edit().putString("saved_designs", shelf.encode()).apply()
+        Look.savedStyles = shelf
+    }
+
+    internal fun applyStyle(c: Context, style: Appearance, shelf: SavedStyles? = null) {
+        val (vod, accent, custom, custom2, bg, motion, scale) = style
+        Look.vod = vod
         Look.accentIdx = accent.coerceIn(0, Look.ACCENTS.size)
         Look.custom = custom and 0xFFFFFF
         Look.custom2 = if (custom2 < 0) -1 else custom2 and 0xFFFFFF
         Look.bgIdx = bg.coerceIn(0, Look.BGS.lastIndex)
         Look.motion = motion.coerceIn(0, 2)
         Look.uiScale = scale.coerceIn(0, Look.SCALES.lastIndex)
-        prefs(c).edit().putInt("look_accent", Look.accentIdx).putInt("look_custom", Look.custom).putInt("look_custom2", Look.custom2).putInt("look_bg", Look.bgIdx).putInt("look_ver", 6)
-            .putInt("look_motion", Look.motion).putInt("look_scale", Look.uiScale).apply()
+        val edit = prefs(c).edit().putBoolean("catalogue_vod", vod).putInt("look_accent", Look.accentIdx).putInt("look_custom", Look.custom).putInt("look_custom2", Look.custom2).putInt("look_bg", Look.bgIdx).putInt("look_ver", 6)
+            .putInt("look_motion", Look.motion).putInt("look_scale", Look.uiScale)
+        if (shelf != null) { edit.putString("saved_designs", shelf.encode()); Look.savedStyles = shelf }
+        edit.apply()
     }
 
     fun setTz(c: Context, mode: Int) {
@@ -503,6 +518,9 @@ object WatchStore {
         persist(c)
     }
 
+    fun historyEpisode(item: Item): Entry? = if (item.kind == Kind.SERIES)
+        entries.firstOrNull { it.itemId == item.id && (it.next || it.pos > 0L) } else null
+
     /** Remove from "Continue watching" (menu key on the card). */
     fun remove(c: Context, itemId: String) {
         if (entries.removeAll { it.itemId == itemId }) persist(c)
@@ -525,7 +543,7 @@ object WatchStore {
         if (item.kind != Kind.SERIES) return e.title to item.url.ifBlank { e.url }
         var s = e.season; var n = e.ep
         if (s == 0 && n == 0) ResumeLogic.seasonEp(e.title)?.let { s = it.first; n = it.second }
-        val ep = item.episodes.firstOrNull { it.season == s && it.num == n }
+        val ep = if (LazySeries.isStub(item)) null else item.episodes.firstOrNull { it.season == s && it.num == n }
         ResumeLog.add(c, "Fortsetzen #" + item.id.takeLast(4) + ": Eintrag S" + e.season + "E" + e.ep + (if (e.next) " (nächste)" else "") + " bei " + (e.pos / 1000) + "s → " + (if (ep != null) "spielt S" + s + "E" + n else "Folge nicht gefunden, gespeicherte Adresse"))
         if (ep == null) return e.title to e.url
         val pref = VariantPref.get(c, item.id)

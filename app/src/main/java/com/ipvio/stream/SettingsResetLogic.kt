@@ -30,7 +30,7 @@ object SettingsResetLogic {
     private val appSettingsKeyMap: Map<Int, Set<String>> = mapOf(
         GENERAL to setOf("sys_kb"),
         VIEW to setOf("grid_cols", "grid_rows", "card_w"),
-        DESIGN to setOf("look_accent", "look_custom", "look_custom2", "look_bg", "look_motion", "look_scale"),
+        DESIGN to setOf("catalogue_vod", "look_accent", "look_custom", "look_custom2", "look_bg", "look_motion", "look_scale"),
         MENU to setOf("menu_order", "menu_hidden"),
         PLAYER to setOf(
             "seek_step", "skip_intro", "show_info", "auto_next", "hide_sec", "show_end", "auto_skip", "auto_outro",

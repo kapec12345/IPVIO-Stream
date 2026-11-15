@@ -41,7 +41,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
-data class BrowseReq(val title: String, val items: List<Item>, val sort: Int = 0)
+data class BrowseReq(val title: String, val items: List<Item>, val sort: Int = 0, val seriesHistory: Boolean = false)
 
 class BrowseState(req0: BrowseReq) {
     /** Titles of the view; grows when a Stalker category is loaded further on opening ([StalkerMore]). */
@@ -62,10 +62,10 @@ class BrowseState(req0: BrowseReq) {
     // Last computed result: returning from the detail page shows the same list again immediately
     internal var lastKey: BrowseKey? = null
     internal var lastList: List<Item>? = null
-    internal var lastFacets: Pair<Int, Facets>? = null
+    internal var lastFacets: Pair<Pair<Int, Int>, Facets>? = null
 }
 
-internal data class BrowseKey(val sort: Int, val minRi: Int, val year: String, val genre: String?, val country: String?, val ver: Int, val source: Int = -1, val lang: String? = null)
+internal data class BrowseKey(val sort: Int, val minRi: Int, val year: String, val genre: String?, val country: String?, val ver: Int, val source: Int = -1, val lang: String? = null, val filmwebRevision: Int = -1)
 
 /** Choices for the filters (genres, countries, years) – from the titles of the list. */
 internal class Facets(val genres: List<String>, val countries: List<Pair<String, String>>, val years: List<String>)
@@ -89,6 +89,12 @@ object BrowsePrefs {
 }
 
 private val SORTS = listOf("Neu hinzugefügt", "Beliebtheit", "Rating: beste zuerst", "Rating: schwächste zuerst", "Jahr: neueste zuerst", "Jahr: älteste zuerst", "A–Z", "Z–A", "Playlist")
+private val KINO_SORTS = SORTS.toMutableList().apply {
+    this[2] = "Filmweb: höchste zuerst"
+    this[3] = "Filmweb: niedrigste zuerst"
+    this[4] = "Produktionsjahr: neueste zuerst"
+    this[5] = "Produktionsjahr: älteste zuerst"
+}
 private val RATING_LABELS = listOf("Alle", "≥ 5", "≥ 6", "≥ 7", "≥ 8", "≥ 9")
 private val RATING_VALUES = listOf(0.0, 5.0, 6.0, 7.0, 8.0, 9.0)
 private val DECADES = listOf("2020er", "2010er", "2000er", "1990er", "vor 1990")
@@ -115,12 +121,12 @@ private fun yearMatches(label: String, y: Int): Boolean = when (label) {
 private fun countryName(code: String): String =
     Locale.Builder().setRegion(code).build().getDisplayCountry(Lang.locale()).ifBlank { code }
 
-private fun facetsOf(items: List<Item>): Facets {
+private fun facetsOf(items: List<Item>, kino: KinoCatalog?): Facets {
     val g = HashSet<String>(); val c = HashSet<String>(); val y = HashSet<Int>()
     for (i in items) {
         val m = MetaRepo.cached(i)
         if (m != null) { g.addAll(Genres.categoriesOf(m)); c.addAll(m.countries) }
-        val yr = yearOf(i)
+        val yr = if (kino != null) kino.year(i) ?: 0 else yearOf(i)
         if (yr > 0) y.add(yr)
     }
     c.remove("--")
@@ -138,24 +144,25 @@ private fun ofSource(items: List<Item>, k: Int): List<Item> {
     return items.mapNotNull { i -> (if (PlaylistStore.inSource(i, k)) i else PlaylistStore.twin(i, k))?.takeIf { seen.add(it.id) } }
 }
 
-private fun filterAndSort(items: List<Item>, k: BrowseKey): List<Item> {
+internal fun filterAndSort(items: List<Item>, k: BrowseKey, kino: KinoCatalog? = null): List<Item> {
+    fun year(i: Item) = if (kino != null) kino.year(i) ?: 0 else yearOf(i)
+    fun score(i: Item) = if (kino != null) kino.score(i) else MetaRepo.cached(i)?.score()
     val minR = RATING_VALUES[k.minRi]
     val f = ofSource(items, k.source).filter { i ->
-        val m = MetaRepo.cached(i)
-        val r = m?.score() ?: 0.0
-        r >= minR &&
-            (k.year == "Alle" || yearMatches(k.year, yearOf(i))) &&
+        val m = if (k.genre != null || k.country != null) MetaRepo.cached(i) else null
+        (minR == 0.0 || (score(i) ?: 0.0) >= minR) &&
+            (k.year == "Alle" || yearMatches(k.year, year(i))) &&
             (k.genre == null || (m != null && Genres.categoriesOf(m).contains(k.genre))) &&
             (k.country == null || (m != null && m.countries.contains(k.country))) &&
             (k.lang == null || i.lang == k.lang)
     }
     return when (k.sort) {
-        0 -> f.asReversed()
+        0 -> if (kino != null) VodRecency.newest(f) else f.asReversed()
         1 -> f.sortedByCached(true) { MetaRepo.cached(it)?.votes ?: -1 }
-        2 -> f.sortedByCached(true) { MetaRepo.cached(it)?.score() ?: -1.0 }
-        3 -> f.sortedByCached(false) { MetaRepo.cached(it)?.score() ?: 99.0 }
-        4 -> f.sortedByCached(true) { yearOf(it) }
-        5 -> f.sortedByCached(false) { if (yearOf(it) == 0) 9999 else yearOf(it) }
+        2 -> f.sortedByCached(true) { score(it) ?: -1.0 }
+        3 -> f.sortedByCached(false) { score(it) ?: 99.0 }
+        4 -> f.sortedByCached(true) { year(it) }
+        5 -> f.sortedByCached(false) { year(it).takeIf { y -> y > 0 } ?: 9999 }
         6 -> f.sortedByCached(false) { it.title.lowercase() }
         7 -> f.sortedByCached(true) { it.title.lowercase() }
         else -> f
@@ -167,13 +174,21 @@ fun BrowseScreen(
     state: BrowseState, gridState: LazyGridState, tab: Int,
     onOpen: (Item) -> Unit, onBack: () -> Unit, onGoTab: (Int) -> Unit,
     all: List<Item> = emptyList(), onPlay: (Item, String, String, Long) -> Unit = { _, _, _, _ -> },
-    onPerson: (PersonRef) -> Unit = {}
+    onPerson: (PersonRef) -> Unit = {}, onHistoryEpisode: (Entry, Item) -> Unit
 ) {
     val ctx = LocalContext.current
     BrowsePrefs.init(ctx)
     val req = state.req
+    val onEpisode = if (req.seriesHistory) onHistoryEpisode else null
     val ver = state.ver
-    val newer = Classifier.version != ver
+    val browseKind = remember(req) { req.items.firstOrNull()?.kind }
+    val useFilmweb = Look.vod && !DemoMode.active && (browseKind == Kind.MOVIE || browseKind == Kind.SERIES)
+    val sorts = if (useFilmweb) KINO_SORTS else SORTS
+    val latest by FilmwebStore.revision.collectAsState()
+    var revision by remember(req, useFilmweb) { mutableIntStateOf(if (useFilmweb) latest else -1) }
+    val filmwebOrder = useFilmweb && (state.sort in 2..5 || state.minRi > 0 || state.year != "Alle")
+    val pendingRatings = filmwebOrder && latest != revision
+    val newer = Classifier.version != ver || pendingRatings
     val cols = AppSettings.gridCols
     val rows = AppSettings.gridRows
     val sideFocus = remember { FocusRequester() }
@@ -191,24 +206,46 @@ var restoreIdx by remember { mutableIntStateOf(state.focused) }
     BackHandler(enabled = !inFilters && !inSidebar) { runCatching { filterFocus.requestFocus() } }
 
     // Filter choices and result list are computed in the background ("All movies" can have 60,000 titles)
-    val facets by produceState(state.lastFacets?.takeIf { it.first == ver }?.second, req, ver) {
-        value = withContext(Dispatchers.Default) { facetsOf(req.items) }.also { state.lastFacets = ver to it }
+    val sourceIndex = state.source
+    val catalog by key(req, revision, ver, sourceIndex, useFilmweb) { produceState<KinoCatalog?>(null) {
+        value = if (useFilmweb) withContext(Dispatchers.IO) {
+            KinoCatalog.read(FilmwebStore.open(ctx), ofSource(req.items, sourceIndex))
+        } else null
+    } }
+    val facetKey = ver to revision
+    val facets by produceState(state.lastFacets?.takeIf { it.first == facetKey }?.second, req, facetKey, catalog) {
+        if (!useFilmweb || catalog != null) value = withContext(Dispatchers.Default) { facetsOf(req.items, catalog) }.also { state.lastFacets = facetKey to it }
     }
     val genres = facets?.genres.orEmpty()
     val countries = facets?.countries.orEmpty()
     val yearOptions = listOf("Alle") + DECADES + facets?.years.orEmpty()
 
-    val browseKind = remember(req) { req.items.firstOrNull()?.kind }
     // Restore the saved language once, before the first list is computed
     remember(state) { if (!state.langInit) { state.langInit = true; state.lang = BrowseLangPrefs.get(ctx, browseKind) }; 0 }
     val langOptions = remember(req) { BrowseLangPrefs.available(req.items) }
-    val key = BrowseKey(state.sort, state.minRi, state.year, state.genre, state.country, ver, state.source, state.lang)
-    val listOrNull by produceState(state.lastList?.takeIf { state.lastKey == key }, req, key) {
-        value = withContext(Dispatchers.Default) { filterAndSort(req.items, key) }.also { state.lastKey = key; state.lastList = it }
+    val key = BrowseKey(state.sort, state.minRi, state.year, state.genre, state.country, ver, state.source, state.lang, revision)
+    LaunchedEffect(req, filmwebOrder, state.source, state.lang, state.sort in 2..3 || state.minRi > 0) {
+        if (filmwebOrder) withContext(Dispatchers.IO) {
+            val source = ofSource(req.items, key.source)
+            val titles = if (key.lang == null) source else source.filter { it.lang == key.lang }
+            fillKinoCatalog(ctx, titles, key.sort in 2..3 || key.minRi > 0)
+        }
+    }
+    val listOrNull by produceState(state.lastList?.takeIf { state.lastKey == key }, req, key, catalog) {
+        if (!useFilmweb || catalog != null) value = withContext(Dispatchers.Default) { filterAndSort(req.items, key, catalog) }.also { state.lastKey = key; state.lastList = it }
     }
     val list = listOrNull.orEmpty()
     val ready = listOrNull != null
 
+    // Refresh an empty ranking automatically. Otherwise let the viewer keep the selected title.
+    LaunchedEffect(filmwebOrder, catalog, list, inFilters) {
+        if (filmwebOrder && (inFilters || list.isEmpty() || (state.sort in 2..3 && catalog?.score(list.first()) == null))) {
+            while (true) {
+                delay(3500)
+                if (revision != FilmwebStore.revision.value) { revision = FilmwebStore.revision.value; break }
+            }
+        }
+    }
     LaunchedEffect(ready) {
         if (!ready) return@LaunchedEffect
         LastFocus.pending = null
@@ -249,7 +286,8 @@ var restoreIdx by remember { mutableIntStateOf(state.focused) }
                 Text(req.title, color = Color.White, fontSize = spx(34), fontWeight = FontWeight.ExtraBold, maxLines = 1)
                 Text(if (ready) "${list.size} Titel" else "Lade …", color = Muted, fontSize = 16.sp)
                 // New info from the genre detection: re-sort only on request so nothing shifts under the cursor
-                if (newer && ready) SmallPill("Neue Infos · aktualisieren") {
+                if (newer && ready) SmallPill(if (pendingRatings) "Sortierung aktualisieren" else "Neue Infos · aktualisieren") {
+                    if (useFilmweb) revision = latest
                     state.ver = Classifier.version; state.focused = 0; restoreIdx = 0; jumpTick++; jumpFirst = true
                 }
                 Spacer(Modifier.weight(1f))
@@ -269,14 +307,18 @@ var restoreIdx by remember { mutableIntStateOf(state.focused) }
                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
                 ) {
                     item {
-                        DropdownPill("Sortierung", SORTS[state.sort], SORTS, state.sort,
-                            active = state.sort != req.sort, modifier = Modifier.focusRequester(filterFocus), icon = FIcon.Sort) { state.sort = it }
+                        DropdownPill("Sortierung", sorts[state.sort], sorts, state.sort,
+                            active = state.sort != req.sort, modifier = Modifier.focusRequester(filterFocus), icon = FIcon.Sort) {
+                            if (useFilmweb) revision = latest
+                            state.sort = it
+                            state.focused = 0; restoreIdx = 0; jumpTick++; jumpFirst = true
+                        }
                     }
                     item {
-                        DropdownPill("Rating", RATING_LABELS[state.minRi], RATING_LABELS, state.minRi, active = state.minRi != 0, icon = FIcon.Rating) { state.minRi = it }
+                        DropdownPill(if (useFilmweb) "Filmweb" else "Rating", RATING_LABELS[state.minRi], RATING_LABELS, state.minRi, active = state.minRi != 0, icon = FIcon.Rating) { if (useFilmweb) revision = latest; state.minRi = it }
                     }
                     item {
-                        DropdownPill("Jahr", state.year, yearOptions, yearOptions.indexOf(state.year).coerceAtLeast(0), active = state.year != "Alle", icon = FIcon.Year) { state.year = yearOptions[it] }
+                        DropdownPill("Jahr", state.year, yearOptions, yearOptions.indexOf(state.year).coerceAtLeast(0), active = state.year != "Alle", icon = FIcon.Year) { if (useFilmweb) revision = latest; state.year = yearOptions[it] }
                     }
                     if (genres.isNotEmpty()) item {
                         val go = listOf("Alle") + genres
@@ -353,13 +395,13 @@ var restoreIdx by remember { mutableIntStateOf(state.focused) }
                         }
                     }
                 } else if (BrowsePrefs.cinema) {
-                    CinemaView(list, state, listState, restoreIdx, restoreFocus, all, onPlay, onPerson, onOpen, jumpTick)
+                    CinemaView(list, state, listState, restoreIdx, restoreFocus, all, onPlay, onPerson, onOpen, jumpTick, onEpisode)
                 } else {
                     // Round 15: big covers as on the home screen, on longer highlight the card expands into a scene image with
                     // info (over the neighbors; in the right columns to the left). Column count follows "View" above.
                     val g = cardGrid(maxWidth, perRow = General.perRow)
                     val land = General.cardArt == 1
-                    val ncols = if (land) intArrayOf(8, 6, 5)[General.cardSize.coerceIn(0, 2)] else if (General.perRow > 0) General.perRow else intArrayOf(10, 8, 6)[General.cardSize.coerceIn(0, 2)]
+                    val ncols = if (land) intArrayOf(8, 6, 5)[General.cardSize.coerceIn(0, 2)] else posterColumns(General.cardSize, General.perRow)
                     val gap = if (land) g.gap else g.posterGap
                     val cardW = (maxWidth - gap * (ncols - 1)) / ncols
                     Box(Modifier.fillMaxSize()) {
@@ -377,8 +419,8 @@ var restoreIdx by remember { mutableIntStateOf(state.focused) }
                                 .then(if (idx == restoreIdx) Modifier.focusRequester(restoreFocus) else Modifier)
                             when {
                                 item.kind == Kind.LIVE -> PosterCard(item, { onOpen(item) }, Modifier.width(cardW).then(mod), fixedPosterHeight = cardW * 1.5f - 42.dp)
-                                land -> LandscapeCard(item, Modifier.width(cardW).then(mod)) { onOpen(item) }
-                                else -> RowPosterCard(item, cardW, mod, overlay = if (idx % ncols >= ncols / 2) 2 else 1) { onOpen(item) }
+                                land -> LandscapeCard(item, Modifier.width(cardW).then(mod), onEpisode = onEpisode) { onOpen(item) }
+                                else -> RowPosterCard(item, cardW, mod, overlay = if (idx % ncols >= ncols / 2) 2 else 1, onEpisode = onEpisode) { onOpen(item) }
                             }
                         }
                     }
@@ -409,7 +451,7 @@ private fun CinemaView(
     list: List<Item>, state: BrowseState, rowState: androidx.compose.foundation.lazy.LazyListState,
     restoreIdx: Int, restoreFocus: FocusRequester,
     all: List<Item>, onPlay: (Item, String, String, Long) -> Unit, onPerson: (PersonRef) -> Unit, onOpen: (Item) -> Unit,
-    jumpTick: Int = 0
+    jumpTick: Int, onEpisode: ((Entry, Item) -> Unit)?
 ) {
     BoxWithConstraints(Modifier.fillMaxSize().clipToBounds()) {
         // Title row on top, below it the detail screen (the same as on the title page). Down pushes it up,
@@ -481,7 +523,7 @@ private fun CinemaView(
                         }
                         .onFocusChanged { st -> if (st.hasFocus) { cur = idx; state.focused = idx; if (open) open = false } }
                         .then(if (isCur) Modifier.focusRequester(posterReq) else Modifier)
-                    RowPosterCard(item, baseW, mod, overlay = 0, aspect = aspect, expand = false) {
+                    RowPosterCard(item, baseW, mod, overlay = 0, aspect = aspect, expand = false, onEpisode = onEpisode) {
                         // OK: push the detail up, focus on "Play" (another OK starts)
                         shown = item; open = true
                     }

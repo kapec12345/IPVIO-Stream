@@ -942,7 +942,7 @@ fun PlayerScreen(req: PlayReq, zapList: List<Item>, liveAll: List<Item>, seriesI
         delay(5000)
         epBanner = false
     }
-    LaunchedEffect(cur.url) {
+    LaunchedEffect(cur.url, Xmltv.revision) {
         epg = emptyList()
         val it = curItem
         if (cur.live && it != null) {

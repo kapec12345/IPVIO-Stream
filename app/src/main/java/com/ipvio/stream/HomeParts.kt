@@ -105,13 +105,19 @@ val LocalScrollTop = compositionLocalOf<(suspend () -> Unit)?> { null }
 
 val LocalCardGrid = compositionLocalOf { CardGrid(183.dp, 141.dp, 183.dp, 16.dp, 330.dp, 12.dp) }
 
+internal fun posterColumns(size: Int, perRow: Int = 0): Int {
+    if (perRow > 0) return perRow
+    val classic = intArrayOf(10, 8, 6)[size.coerceIn(0, 2)]
+    return if (Look.vod) classic - 1 else classic
+}
+
 fun cardGrid(contentW: Dp, size: Int = General.cardSize, perRow: Int = 0): CardGrid {
     val gap = dpx(16)
     val pgap = dpx(14)
     fun col(n: Int, g: Dp) = (contentW - g * (n - 1)) / n
     // "View" button: small = more cards per row, large = fewer
     val land = intArrayOf(8, 6, 5)[size.coerceIn(0, 2)]
-    val poster = if (perRow > 0) perRow else intArrayOf(10, 8, 6)[size.coerceIn(0, 2)]
+    val poster = posterColumns(size, perRow)
     val wide = intArrayOf(5, 4, 3)[size.coerceIn(0, 2)]
     return CardGrid(col(land, gap), col(poster, pgap), col(land, gap), gap, col(wide, gap), pgap)
 }
@@ -121,7 +127,7 @@ fun cardBackdrop(url: String): String = url.replace("/t/p/w1280/", "/t/p/w780/")
 
 /** "2016 | Abenteuer | 1h 47min | ★ 7.6" as in the design draft. */
 @Composable
-fun HeroMetaLine(item: Item, m: Meta?, dots: Boolean = false) {
+fun HeroMetaLine(item: Item, m: Meta?, dots: Boolean = false, inlineFilmweb: Boolean = true) {
     val parts = ArrayList<Pair<String, Boolean>>()   // text, raw (do not translate)
     // Image 1: „2016 | Abenteuer | 1h 47min | ★ 7.6“; image 2: „Drama · 2023 · 2 Staffeln“
     if (dots) m?.genres?.firstOrNull()?.let { parts.add(it to true) }
@@ -137,7 +143,9 @@ fun HeroMetaLine(item: Item, m: Meta?, dots: Boolean = false) {
             }
             Text(p, color = Color(0xFFD4D4DA), fontSize = spx(if (dots) 15 else 16), raw = raw, maxLines = 1)
         }
-        if (!dots && m != null && (m.imdbRating != null || m.rtRating != null || m.rating != null)) {
+        if (Look.vod && item.kind != Kind.LIVE) {
+            if (inlineFilmweb) FilmwebRatingLabel(item, m?.year?.toIntOrNull(), true, false, compact = true)
+        } else if (!dots && m != null && (m.imdbRating != null || m.rtRating != null || m.rating != null)) {
             if (parts.isNotEmpty()) Box(Modifier.width(1.dp).height(dpx(16)).background(Color(0x66FFFFFF)))
             ScoreRow(m, 17)
         }
@@ -201,8 +209,8 @@ fun HeroButton(text: String, icon: AIcon, primary: Boolean, modifier: Modifier =
     val ink = if (f) DS.FocusInk else Color.White
     Row(
         modifier.graphicsLayer { val k = s * pulse.scale; scaleX = k; scaleY = k }.height(dpx(h)).clip(shape)
-            .background(if (f) DS.FocusFill else Color(0x33FFFFFF))
-            .border(1.dp, if (f) DS.FocusFill else Color(0x40FFFFFF), shape)
+            .background(if (f) DS.FocusFill else if (!Look.vod) Color(0x33FFFFFF) else if (primary) Surf2 else Tok.GlassStrong)
+            .border(if (f) 3.dp else 1.dp, if (f) DS.FocusFill else if (primary) Accent2 else Tok.Line, shape)
             .onFocusChanged { f = it.isFocused }
             .trackFocus()
             .clickable(onClick = { pulse.pulse(); onClick() })
@@ -211,7 +219,7 @@ fun HeroButton(text: String, icon: AIcon, primary: Boolean, modifier: Modifier =
         horizontalArrangement = Arrangement.spacedBy(dpx(h * 0.28f))
     ) {
         AppIcon(icon, if (f) DS.FocusInk else if (primary) Accent1 else Color.White, size = dpx(h * 0.4f))
-        Text(text, color = ink, fontSize = spx(h * 0.34f), fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Text(text, color = ink, fontSize = spx(h * (if (Look.vod) 0.39f else 0.34f)), fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }
 
@@ -254,7 +262,7 @@ fun RowTitle(
         Modifier.fillMaxWidth().padding(start = dpx(29), end = dpx(28), top = dpx(28)),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(title, color = Color.White, fontSize = spx(25), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        Text(title, color = Color.White, fontSize = spx(if (Look.vod) 31 else 25), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f), raw = raw)
         if (onAll != null) {
             var f by remember { mutableStateOf(false) }
@@ -446,27 +454,28 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.tileArt(id: Int, c:
 
 /** Channel card (design): logo, name, running show, start/end time and progress. */
 @Composable
-fun ChannelNowCard(item: Item, modifier: Modifier, onClick: () -> Unit) {
+fun ChannelNowCard(item: Item, modifier: Modifier, onLong: (() -> Unit)? = null, onClick: () -> Unit) {
+    val compact = Look.vod && General.channelRowSize < 2
     val ctx = LocalContext.current
     var f by remember { mutableStateOf(false) }
     val s by animateFloatAsState(if (f) focusScale(1.06f) else 1f, label = "chnow")
     val border by animateColorAsState(if (f) Color.White else CardLine, label = "chb")
     val shape = RoundedCornerShape(dpx(10))
-    val epg by produceState(emptyList<EpgEntry>(), item.id) { value = Epg.now(item) }
+    val epg by produceState(emptyList<EpgEntry>(), item.id, Xmltv.revision) { value = Epg.now(item) }
     val nowE = Epg.current(epg)
     Column(
-        modifier.height(dpx(110)).graphicsLayer { scaleX = s; scaleY = s }.focusGlow(f, shape).clip(shape)
+        modifier.height(dpx(if (compact) 83 else 110)).graphicsLayer { scaleX = s; scaleY = s }.focusGlow(f, shape).clip(shape)
             .background(if (f) Color(0xFF1E1E24) else CardBg)
             .border(if (f) 2.dp else 1.dp, border, shape)
             .onFocusChanged { f = it.isFocused }
             .trackFocus()
-            .favKeys { Library.toggleFav(ctx, item.id) }
+            .favKeys { if (onLong != null) onLong() else Library.toggleFav(ctx, item.id) }
             .clickable(onClick = onClick)
             .padding(start = dpx(14), end = dpx(14), top = dpx(12), bottom = dpx(10))
     ) {
         // Logo left, all texts left-aligned to its right: channel, what is on now, start and end time
         Row(Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(12))) {
-            Box(Modifier.size(dpx(58)), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(dpx(if (compact) 36 else 58)), contentAlignment = Alignment.Center) {
                 if (item.logo != null) AsyncImage(item.logo, item.title, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                 else Text(raw = true, text = item.title.take(3).uppercase(), color = Color.White, fontSize = spx(22), fontWeight = FontWeight.ExtraBold)
                 if (Library.isFav(item.id)) AppIcon(AIcon.Star, DS.Gold, Modifier.align(Alignment.TopEnd), dpx(14))
@@ -475,7 +484,7 @@ fun ChannelNowCard(item: Item, modifier: Modifier, onClick: () -> Unit) {
                 Text(raw = true, text = item.title, color = Color.White, fontSize = spx(15), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (nowE != null) {
                     Text(raw = true, text = nowE.title, color = Color(0xFFD0D0D6), fontSize = spx(13), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(raw = true, text = hhmm(nowE.start) + " – " + hhmm(nowE.end), color = Color(0xFFA0A0A8), fontSize = spx(13), maxLines = 1)
+                    if (!compact) Text(raw = true, text = hhmm(nowE.start) + " – " + hhmm(nowE.end), color = Color(0xFFA0A0A8), fontSize = spx(13), maxLines = 1)
                 } else Text("Live", color = Color(0xFFA0A0A8), fontSize = spx(13), maxLines = 1)
             }
         }
@@ -493,7 +502,36 @@ fun ChannelNowRow(title: String, list: List<Item>, onOpen: (Item) -> Unit, onAll
     CardRow(title, list, CARD_POSTER, onOpen, onAll, RowStates.get("${NavState.tab}|chnow"))
 }
 
-/** Poster without text (design "Top 10 · Trending"). Without an image: title on a colored surface. */
+@Composable
+private fun PosterCaption(item: Item, modifier: Modifier) {
+    Text(raw = true, text = item.title, color = Color.White, fontSize = spx(21), lineHeight = spx(24),
+        fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis,
+        modifier = modifier.fillMaxWidth()
+            .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xF00B101A), Color(0xFF0B101A))))
+            .padding(start = dpx(12), end = dpx(12), top = dpx(32), bottom = dpx(11)))
+}
+
+@Composable
+private fun EpisodePosterCaption(item: Item, entry: Entry, modifier: Modifier) {
+    val number = if (entry.season != 0 || entry.ep != 0) entry.season to entry.ep else ResumeLogic.seasonEp(entry.title)
+    val detail = listOfNotNull(number?.let { "S${it.first}E${it.second}" }, fmtTime(entry.pos).takeIf { !entry.next }).joinToString(" · ")
+    Column(modifier.fillMaxWidth()
+        .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xF00B101A), Color(0xFF0B101A))))
+        .padding(start = dpx(10), end = dpx(10), top = dpx(18), bottom = dpx(8))) {
+        Text(raw = true, text = item.title, color = Color.White, fontSize = spx(18), lineHeight = spx(20),
+            fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(if (entry.next) "Nächste Folge" else "Folge fortsetzen", color = Color.White, fontSize = spx(15),
+            lineHeight = spx(17), fontWeight = FontWeight.SemiBold)
+        if (detail.isNotEmpty()) Text(raw = true, text = detail, color = SoftInk, fontSize = spx(14), maxLines = 1)
+        if (!entry.next && entry.dur > 0L) {
+            Box(Modifier.fillMaxWidth().padding(top = dpx(4)).height(dpx(3)).background(Color.DarkGray)) {
+                Box(Modifier.fillMaxHeight().fillMaxWidth((entry.pos.toFloat() / entry.dur).coerceIn(0f, 1f)).background(Color.White))
+            }
+        }
+    }
+}
+
+/** A grid poster keeps its caption visible even with missing or illegible artwork. */
 @Composable
 fun PosterTile(item: Item, modifier: Modifier, reorder: List<Item>? = null, onClick: () -> Unit) {
     val st = rememberMetaState(item)
@@ -505,7 +543,7 @@ fun PosterTile(item: Item, modifier: Modifier, reorder: List<Item>? = null, onCl
     val s by animateFloatAsState(if (f) focusScale(1.07f) else 1f, label = "ptile")
     val shape = RoundedCornerShape(dpx(8))
     val rowF = LocalRowFocus.current
-    val dimA by animateFloatAsState(if (rowF && !f) 0.5f else 1f, tween(if (Look.motion == 0) 0 else 320), label = "dim")
+    val dimA by animateFloatAsState(if (rowF && !f) Look.siblingOpacity else 1f, tween(if (Look.motion == 0) 0 else 320), label = "dim")
     val img: String? = when {
         item.kind == Kind.LIVE -> item.logo
         m?.poster != null -> cardPoster(m.poster)
@@ -515,24 +553,28 @@ fun PosterTile(item: Item, modifier: Modifier, reorder: List<Item>? = null, onCl
     Box(
         modifier.then(reorderMod).aspectRatio(2f / 3f).graphicsLayer { scaleX = s; scaleY = s }.focusGlow(f, shape).clip(shape)
             .background(Brush.linearGradient(listOf(colorFor(item).copy(alpha = .75f), Surf2)))
-            .border(1.dp, if (f) Color(0x40FFFFFF) else CardLine, shape)
+            .border(if (f && Look.vod) 3.dp else 1.dp, if (f) Look.posterFocus else CardLine, shape)
             .billboardFocus(item) { f = it }
             .trackFocus()
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         if (favMenu && reorder != null) FavReorderMenu(item, reorder) { favMenu = false }
-        if (img == null && st.done) ArtPlaceholder(item, Modifier.fillMaxSize())
-        if (img != null) AsyncImage(img, item.title, Modifier.fillMaxSize(), contentScale = if (item.kind == Kind.LIVE) ContentScale.Fit else ContentScale.Crop)
+        if (Look.vod && item.kind != Kind.LIVE) KinoPoster(item, m?.poster, Modifier.fillMaxSize())
+        else if (img != null) AsyncImage(img, item.title, Modifier.fillMaxSize(), contentScale = if (item.kind == Kind.LIVE) ContentScale.Fit else ContentScale.Crop)
+        else if (st.done) ArtPlaceholder(item, Modifier.fillMaxSize(), showTitle = !Look.vod)
+        if (Look.vod) PosterCaption(item, Modifier.align(Alignment.BottomStart))
         if (item.kind != Kind.SERIES && DeadLinks.isDead(item.url)) AppIcon(AIcon.Warning, DS.Gold, Modifier.align(Alignment.TopStart).padding(dpx(8)), dpx(18))
         // 17c: darkening as a simple surface on top (cheaper than transparency of the whole card)
         Box(Modifier.fillMaxSize().drawBehind { val d = 1f - dimA; if (d > 0.01f) drawRect(Color.Black.copy(alpha = d)) })
+        KinoPosterInfo(item, m?.year)
     }
 }
 
 /** Landscape card (design picture 2): image, title below, genre, seasons or year and ★ rating. */
 @Composable
-fun LandscapeCard(item: Item, modifier: Modifier, reorder: List<Item>? = null, onClick: () -> Unit) {
+fun LandscapeCard(item: Item, modifier: Modifier, reorder: List<Item>? = null, onEpisode: ((Entry, Item) -> Unit)? = null, onClick: () -> Unit) {
+    val resume = if (onEpisode != null) WatchStore.historyEpisode(item) else null
     val st = rememberMetaState(item)
     // Favorites: menu key / long OK opens the move menu ([reorder] = the favorites of this section)
     var favMenu by remember { mutableStateOf(false) }
@@ -542,23 +584,25 @@ fun LandscapeCard(item: Item, modifier: Modifier, reorder: List<Item>? = null, o
     val s by animateFloatAsState(if (f) focusScale(1.07f) else 1f, label = "land")
     val shape = RoundedCornerShape(dpx(8))
     val rowF = LocalRowFocus.current
-    val dimA by animateFloatAsState(if (rowF && !f) 0.5f else 1f, tween(if (Look.motion == 0) 0 else 320), label = "dim")
+    val dimA by animateFloatAsState(if (rowF && !f) Look.siblingOpacity else 1f, tween(if (Look.motion == 0) 0 else 320), label = "dim")
     val img = m?.backdrop?.let { cardBackdrop(it) } ?: m?.poster?.let { cardPoster(it) } ?: item.logo
     Box(
         modifier.then(reorderMod).aspectRatio(1.3f).graphicsLayer { scaleX = s; scaleY = s }.focusGlow(f, shape).clip(shape)
             .background(Brush.linearGradient(listOf(colorFor(item).copy(alpha = .75f), Surf2)))
-            .border(1.dp, if (f) Color(0x40FFFFFF) else CardLine, shape)
+            .border(if (f && Look.vod) 3.dp else 1.dp, if (f) Look.posterFocus else CardLine, shape)
             .billboardFocus(item) { f = it }
             .trackFocus()
-            .clickable(onClick = onClick)
+            .clickable { if (resume != null && onEpisode != null) onEpisode(resume, item) else onClick() }
     ) {
         if (favMenu && reorder != null) FavReorderMenu(item, reorder) { favMenu = false }
-        if (img == null) ArtPlaceholder(item, Modifier.fillMaxSize(), showTitle = false)
-        else AsyncImage(img, item.title, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        if (Look.vod && item.kind != Kind.LIVE && m?.backdrop == null) KinoPoster(item, m?.poster, Modifier.fillMaxSize())
+        else if (img == null) ArtPlaceholder(item, Modifier.fillMaxSize(), showTitle = !Look.vod)
+        else AsyncImage(img, item.title, Modifier.fillMaxSize(), contentScale = if (Look.vod) ContentScale.Inside else ContentScale.Crop)
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.35f to Color.Transparent, 1f to Color(0xF5070709))))
         if (item.kind != Kind.SERIES && DeadLinks.isDead(item.url)) AppIcon(AIcon.Warning, DS.Gold, Modifier.align(Alignment.TopStart).padding(dpx(8)), dpx(18))
-        Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = dpx(12), end = dpx(12), bottom = dpx(10))) {
-            Text(raw = true, text = item.title, color = Color.White, fontSize = spx(16), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (resume != null) EpisodePosterCaption(item, resume, Modifier.align(Alignment.BottomStart))
+        else Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = dpx(12), end = dpx(12), bottom = dpx(10))) {
+            Text(raw = true, text = item.title, color = Color.White, fontSize = spx(if (Look.vod) 21 else 16), lineHeight = spx(24), fontWeight = FontWeight.Bold, maxLines = if (Look.vod) 2 else 1, overflow = TextOverflow.Ellipsis)
             m?.genres?.firstOrNull()?.let { Text(raw = true, text = it, color = SoftInk, fontSize = spx(13), maxLines = 1) }
             Row(Modifier.padding(top = dpx(4)), verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -566,7 +610,7 @@ fun LandscapeCard(item: Item, modifier: Modifier, reorder: List<Item>? = null, o
                     color = SoftInk, fontSize = spx(12), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
                     raw = item.kind != Kind.SERIES
                 )
-                m?.rating?.let {
+                if (!Look.vod) m?.rating?.let {
                     AppIcon(AIcon.Star, Accent1, size = dpx(14))
                     Spacer(Modifier.width(dpx(5)))
                     Text(raw = true, text = String.format("%.1f", it), color = Color.White, fontSize = spx(13), fontWeight = FontWeight.SemiBold)
@@ -575,6 +619,7 @@ fun LandscapeCard(item: Item, modifier: Modifier, reorder: List<Item>? = null, o
         }
         // 17c: darkening as a simple surface on top (cheaper than transparency of the whole card)
         Box(Modifier.fillMaxSize().drawBehind { val d = 1f - dimA; if (d > 0.01f) drawRect(Color.Black.copy(alpha = d)) })
+        KinoPosterInfo(item, m?.year)
     }
 }
 
@@ -592,7 +637,7 @@ const val CARD_TOP10 = 2
 fun CardRow(
     title: String, list: List<Item>, style: Int, onOpen: (Item) -> Unit, onAll: (() -> Unit)?,
     state: LazyListState, linkReq: FocusRequester = remember { FocusRequester() }, firstCard: FocusRequester = remember { FocusRequester() },
-    raw: Boolean = false, upReq: FocusRequester? = null, leftReq: FocusRequester? = null
+    raw: Boolean = false, upReq: FocusRequester? = null, leftReq: FocusRequester? = null, onEpisode: ((Entry, Item) -> Unit)? = null
 ) {
     val g = LocalCardGrid.current
     val live = list.firstOrNull()?.kind == Kind.LIVE
@@ -622,9 +667,9 @@ fun CardRow(
                 }.onFocusChanged { st -> if (st.hasFocus) cur = i }
                 when {
                     it.kind == Kind.LIVE -> ChannelNowCard(it, track.width(g.chan).then(fr)) { onOpen(it) }
-                    style == CARD_LAND -> LandscapeCard(it, track.width(g.land).restoreFocus(it.id).then(fr)) { onOpen(it) }
+                    style == CARD_LAND -> LandscapeCard(it, track.width(g.land).restoreFocus(it.id, seriesHistory = onEpisode != null).then(fr), onEpisode = onEpisode) { onOpen(it) }
                     // 17c: on the home screen no preview expands (the info is already shown large at the top), Top 10 without numbers
-                    else -> RowPosterCard(it, g.poster, track.restoreFocus(it.id).then(fr), overlay = 0, expand = false) { onOpen(it) }
+                    else -> RowPosterCard(it, g.poster, track.restoreFocus(it.id, seriesHistory = onEpisode != null).then(fr), overlay = 0, expand = false, onEpisode = onEpisode) { onOpen(it) }
                 }
             }
         }
@@ -657,7 +702,8 @@ fun CenterFollow(state: LazyListState, cur: Int) {
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-fun RowPosterCard(item: Item, baseW: Dp, modifier: Modifier, overlay: Int = 0, aspect: Float = 1.5f, expand: Boolean = true, onClick: () -> Unit) {
+fun RowPosterCard(item: Item, baseW: Dp, modifier: Modifier, overlay: Int = 0, aspect: Float = 1.5f, expand: Boolean = true, onEpisode: ((Entry, Item) -> Unit)? = null, onClick: () -> Unit) {
+    val resume = if (onEpisode != null) WatchStore.historyEpisode(item) else null
     val st = rememberMetaState(item)
     val m = st.meta
     var f by remember { mutableStateOf(false) }
@@ -671,7 +717,7 @@ fun RowPosterCard(item: Item, baseW: Dp, modifier: Modifier, overlay: Int = 0, a
     // Even with animation "Off" the preview expands (then without motion, see snap below)
     // Preview style (View > Preview on highlight): info on the poster (default) or wide scene image
     val wide = General.previewStyle == 1
-    val canOpen = expand && (if (wide) m?.backdrop != null else m != null)
+    val canOpen = expand && resume == null && (if (wide) m?.backdrop != null else m != null)
     // View settings live preview: one card shows its highlighted state so the preview style can be judged on a real title
     val demo = ViewLive.active && ViewLive.tab == 0 && ViewLive.demoId == item.id
     val fx = f || demo
@@ -706,7 +752,7 @@ fun RowPosterCard(item: Item, baseW: Dp, modifier: Modifier, overlay: Int = 0, a
     val s by animateFloatAsState(if (fx && (!open || !wide)) focusScale(if (wide) 1.05f else 1.12f) else 1f, label = "ps")
     // 17b: in the selected row the other cards step back
     val rowF = LocalRowFocus.current
-    val dimA by animateFloatAsState(if (rowF && !f) 0.5f else 1f, tween(if (Look.motion == 0) 0 else 320), label = "dim")
+    val dimA by animateFloatAsState(if (rowF && !f) Look.siblingOpacity else 1f, tween(if (Look.motion == 0) 0 else 320), label = "dim")
     val shape = RoundedCornerShape(dpx(10))
     // The expanded scene image draws its own frame
     // Image only. The focus sits on the poster slot (bottom), not on the wide card: otherwise Right/Left skips
@@ -715,7 +761,7 @@ fun RowPosterCard(item: Item, baseW: Dp, modifier: Modifier, overlay: Int = 0, a
     Box(
         mod.graphicsLayer { scaleX = s; scaleY = s }.focusGlow(f, shape).clip(shape)
             .background(Brush.linearGradient(listOf(colorFor(item).copy(alpha = .75f), Surf2)))
-            .border(1.dp, if (f) Color(0x40FFFFFF) else CardLine, shape)
+            .border(if (f && Look.vod) 3.dp else 1.dp, if (f) Look.posterFocus else CardLine, shape)
     ) {
         // Poster at the bottom, the scene image fades in above it with the progress (no crossfade switch)
         val img: String? = when {
@@ -724,8 +770,11 @@ fun RowPosterCard(item: Item, baseW: Dp, modifier: Modifier, overlay: Int = 0, a
             else -> null
         }
         // Placeholder lies under the image: if the image is missing or does not load, it stays visible
-        if (img == null && st.done) ArtPlaceholder(item, Modifier.fillMaxSize())
-        if (img != null) AsyncImage(img, item.title, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        if (Look.vod && item.kind != Kind.LIVE) KinoPoster(item, m?.poster, Modifier.fillMaxSize())
+        else if (img != null) AsyncImage(img, item.title, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        else if (st.done) ArtPlaceholder(item, Modifier.fillMaxSize(), showTitle = !Look.vod)
+        if (resume != null) EpisodePosterCaption(item, resume, Modifier.align(Alignment.BottomStart))
+        else if (Look.vod && p < 0.99f) PosterCaption(item, Modifier.align(Alignment.BottomStart).graphicsLayer { alpha = 1f - p })
         if (wide && p > 0.01f && m?.backdrop != null) {
             Box(Modifier.fillMaxSize().graphicsLayer { alpha = p }) {
                 AsyncImage(cardBackdrop(m.backdrop), item.title, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -750,11 +799,14 @@ fun RowPosterCard(item: Item, baseW: Dp, modifier: Modifier, overlay: Int = 0, a
         if (item.kind == Kind.SERIES && NewEpisodes.list.any { it.id == item.id }) Box(Modifier.align(Alignment.TopStart).padding(dpx(8))) { Badge("Neue Folge", DS.Scrim, Accent2, AIcon.Sparkle) }
         // 17c: darkening as a simple surface on top (cheaper than transparency of the whole card)
         Box(Modifier.fillMaxSize().drawBehind { val d = 1f - dimA; if (d > 0.01f) drawRect(Color.Black.copy(alpha = d)) })
+        KinoPosterInfo(item, m?.year)
     }
     }
     // Position only for the View settings live preview (otherwise this ran for every card on every scroll frame)
     val focusMod = (if (ViewLive.active) Modifier.onGloballyPositioned { c -> geo[0] = (c.positionInRoot().x + c.size.width / 2f) / viewW.width.coerceAtLeast(1); geo[1] = c.positionInRoot().y } else Modifier)
-        .billboardFocus(item) { f = it }.trackFocus().clickable(onClick = onClick)
+        .billboardFocus(item) { f = it }.trackFocus().clickable {
+            if (resume != null && onEpisode != null) onEpisode(resume, item) else onClick()
+        }
     if (overlay == 0) Box(modifier.width(w).height(h).then(focusMod)) { visual(Modifier.fillMaxSize()) }
     else {
         // In the layout the card always takes only its own space (nothing shifts) and expands over it: middle to both
@@ -781,7 +833,7 @@ private fun PosterInfo(item: Item, base: Meta, load: Boolean, baseW: Dp, modifie
     Column(modifier, verticalArrangement = Arrangement.spacedBy((4f * k).dp)) {
         Text(raw = true, text = item.title, color = Color.White, fontSize = (16f * k).sp, lineHeight = (19f * k).sp, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy((8f * k).dp)) {
-            ScoreRow(m, (11f * k).toInt().coerceAtLeast(10))
+            if (!Look.vod) ScoreRow(m, (11f * k).toInt().coerceAtLeast(10))
             (m.year ?: item.year?.toString())?.let { Text(raw = true, text = it, color = soft, fontSize = (12f * k).sp, maxLines = 1) }
         }
         m.genres.take(2).takeIf { it.isNotEmpty() }?.let { Text(raw = true, text = it.joinToString(" · "), color = Tok.TextLow, fontSize = (12f * k).sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
@@ -796,7 +848,7 @@ private fun PreviewInfo(item: Item, base: Meta, load: Boolean, modifier: Modifie
     Column(modifier, verticalArrangement = Arrangement.spacedBy(dpx(8))) {
         Text(raw = true, text = item.title, color = Color.White, fontSize = spx(28), fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(dpx(14))) {
-            ScoreRow(m, 18)
+            if (!Look.vod) ScoreRow(m, 18)
             (m.year ?: item.year?.toString())?.let { Text(raw = true, text = it, color = soft, fontSize = spx(19), fontWeight = FontWeight.Medium) }
             if (item.kind == Kind.SERIES) Text(seriesCountText(item), color = soft, fontSize = spx(19), maxLines = 1)
             else m.runtime?.takeIf { it > 0 }?.let { Text(raw = true, text = if (it >= 60) "${it / 60}h ${it % 60}min" else "$it min", color = soft, fontSize = spx(19)) }
@@ -823,7 +875,7 @@ fun CardGridRows(list: List<Item>, style: Int, firstReq: FocusRequester?, onOpen
     val live = list.firstOrNull()?.kind == Kind.LIVE
     // same column count as cardGrid ("Ansicht" button)
     val sz = General.cardSize.coerceIn(0, 2)
-    val perRow = if (style == CARD_LAND || live) intArrayOf(8, 6, 5)[sz] else intArrayOf(10, 8, 6)[sz]
+    val perRow = if (style == CARD_LAND || live) intArrayOf(8, 6, 5)[sz] else posterColumns(sz)
     val gap = if (style == CARD_LAND || live) g.gap else g.posterGap
     Column(Modifier.padding(start = RowPadX, end = RowPadX, top = dpx(12)), verticalArrangement = Arrangement.spacedBy(gap)) {
         list.chunked(perRow).forEachIndexed { r, row ->
@@ -848,7 +900,7 @@ fun CardGridRows(list: List<Item>, style: Int, firstReq: FocusRequester?, onOpen
 fun LazyListScope.cardGridItems(key: String, list: List<Item>, style: Int, firstReq: FocusRequester?, onOpen: (Item) -> Unit, reorder: List<Item>? = null) {
     val live = list.firstOrNull()?.kind == Kind.LIVE
     val sz = General.cardSize.coerceIn(0, 2)
-    val perRow = if (style == CARD_LAND || live) intArrayOf(8, 6, 5)[sz] else intArrayOf(10, 8, 6)[sz]
+    val perRow = if (style == CARD_LAND || live) intArrayOf(8, 6, 5)[sz] else posterColumns(sz)
     val rows = (list.size + perRow - 1) / perRow
     items(rows, key = { "$key#$it" }, contentType = { "cardrow$style" }) { r ->
         CardGridRow(list.subList(r * perRow, minOf(list.size, (r + 1) * perRow)), r == 0, style, live, if (r == 0) firstReq else null, onOpen, reorder)
@@ -883,12 +935,12 @@ fun ChannelDetailCard(item: Item, modifier: Modifier, reorder: List<Item>? = nul
     var favMenu by remember { mutableStateOf(false) }
     val s by animateFloatAsState(if (f) focusScale(1.04f) else 1f, label = "chd")
     val shape = RoundedCornerShape(dpx(12))
-    val epg by produceState<List<EpgEntry>?>(null, item.id) { value = Epg.now(item) }
+    val epg by produceState<List<EpgEntry>?>(null, item.id, Xmltv.revision) { value = Epg.now(item) }
     val nowE = epg?.let { Epg.current(it) }
     Column(
         modifier.then(if (reorder != null) Modifier.followFav(item.id) else Modifier).height(dpx(172)).graphicsLayer { scaleX = s; scaleY = s }.focusGlow(f, shape).clip(shape)
             .background(if (f) Tok.CardFocus else CardBg)
-            .border(if (f) 3.dp else 1.dp, if (f) Color.White else CardLine, shape)
+            .border(if (f && Look.vod) 3.dp else 1.dp, if (f) Look.posterFocus else CardLine, shape)
             .onFocusChanged { f = it.isFocused }
             .trackFocus()
             .then(if (reorder != null) Modifier.menuKeys({ favMenu = true }, { favMenu = true }) else Modifier.favKeys { Library.toggleFav(ctx, item.id) })

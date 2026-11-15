@@ -22,7 +22,9 @@ import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.TimeZone
-import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import java.util.zip.GZIPInputStream
 
 private val FMT = object : ThreadLocal<HashMap<String, SimpleDateFormat>>() {
@@ -65,7 +67,13 @@ object EpgNet {
 object Xmltv {
     var status by mutableStateOf("Noch nicht geladen")
     var channelCount by mutableStateOf(0)
-    private val progs = ConcurrentHashMap<String, List<EpgEntry>>()
+    var revision by mutableStateOf(0)
+        private set
+    @Volatile private var progs: Map<String, List<EpgEntry>> = emptyMap()
+    @Volatile private var polish: Map<String, List<EpgEntry>> = emptyMap()
+    @Volatile private var siblings: Map<String, Item> = emptyMap()
+    @Volatile private var extraById: Map<String, List<EpgEntry>> = emptyMap()
+    private var generation = 0L
     private val client = Net.withTimeouts(20, 180)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
@@ -74,44 +82,100 @@ object Xmltv {
     fun customUrl(c: Context): String = prefs(c).getString("custom", "") ?: ""
     fun setCustom(c: Context, u: String) { prefs(c).edit().putString("custom", u.trim()).apply() }
 
-    fun has(id: String?): Boolean = id != null && progs.containsKey(id.lowercase())
-    fun forChannel(id: String?): List<EpgEntry> = if (id == null) emptyList() else progs[id.lowercase()] ?: emptyList()
+    fun polishEnabled(c: Context): Boolean = prefs(c).getBoolean("polish_guide", false)
+    fun setPolishEnabled(c: Context, enabled: Boolean) {
+        prefs(c).edit().putBoolean("polish_guide", enabled).apply()
+    }
 
-    /**
-     * Loads the XMLTV program for the visible channels (hidden languages do not even arrive).
-     * Only what is needed is stored: window −1 h to +36 h, at most 80 shows per channel, description shortened,
-     * equal titles only once. If memory gets tight, parsing stops and keeps what has been read so far.
-     */
-    /** [delayMs]: at app start the guide waits a little so the home screen and the playlist get the CPU first. */
-    fun start(c: Context, urls: List<String>, items: List<Item>, delayMs: Long = 0L) {
-        val all = (urls + listOf(customUrl(c))).filter { it.startsWith("http") }.distinct()
-        if (all.isEmpty()) { status = "Keine EPG-Adresse gefunden"; return }
-        val wanted = items.filter { it.kind == Kind.LIVE }.mapNotNull { it.tvgId?.lowercase() }.toSet()
-        if (wanted.isEmpty()) { status = "Playlist enthält keine Sender-IDs (tvg-id)"; return }
+    fun primary(item: Item) = progs[item.tvgId?.lowercase()].orEmpty()
+    fun extra(item: Item) = extraById[item.id].orEmpty()
+    internal fun donor(item: Item) = siblings[item.id]
+
+    private fun rebuildExtras() {
+        val extra = HashMap(polish)
+        for ((id, sibling) in siblings) {
+            val guide = fillGuideGaps(primary(sibling), polish[sibling.id].orEmpty())
+            if (guide.isNotEmpty()) extra[id] = fillGuideGaps(extra[id].orEmpty(), guide)
+        }
+        extraById = extra
+    }
+    fun has(item: Item) = primary(item).isNotEmpty() || extra(item).isNotEmpty()
+    fun forChannel(item: Item) = fillGuideGaps(primary(item), extra(item))
+
+    @Synchronized fun start(c: Context, urls: List<String>, items: List<Item>, delayMs: Long = 0L) {
+        val all = (urls + customUrl(c)).filter { it.startsWith("http") }.distinct()
+        val live = items.filter { it.kind == Kind.LIVE }
+        val wanted = live.mapNotNull { it.tvgId?.lowercase() }.toSet()
+        val usePolish = polishEnabled(c) && live.any { it.lang == "pl" || it.lang == LangTagLogic.UNKNOWN }
+        val app = c.applicationContext
+        val run = ++generation
         job?.cancel()
+        siblings = GuideVariants.donors(live)
+        if (!usePolish) polish = emptyMap()
+        rebuildExtras()
+        revision++
+        status = "Wird geladen …"
         job = scope.launch {
             if (delayMs > 0) kotlinx.coroutines.delay(delayMs)
-            status = "Wird geladen …"
+            var providerError: String? = null
+            var limited = false
+            var providerReady = false
+            var publicReady = !usePolish
+            fun publish(primaryData: Map<String, List<EpgEntry>>? = null, extraData: Map<String, List<EpgEntry>>? = null,
+                        error: String? = null, truncated: Boolean = false, publicFailed: Boolean = false) {
+                synchronized(this@Xmltv) {
+                    if (run != generation) return
+                    if (primaryData != null) {
+                        progs = primaryData
+                        providerError = error
+                        limited = truncated
+                        providerReady = true
+                    }
+                    if (extraData != null) polish = extraData
+                    if (extraData != null || publicFailed) publicReady = true
+                    rebuildExtras()
+                    Epg.trim()
+                    EpgFull.trim()
+                    channelCount = if (extraById.isEmpty()) progs.size else live.count(::has)
+                    status = when {
+                        channelCount == 0 && all.isEmpty() && !usePolish -> "Keine EPG-Adresse gefunden"
+                        channelCount == 0 && wanted.isEmpty() && !usePolish -> "Playlist enthält keine Sender-IDs (tvg-id)"
+                        channelCount == 0 && (!providerReady || !publicReady) -> "Wird geladen …"
+                        channelCount == 0 -> "Keine Programmdaten erhalten (${providerError ?: "leer"})"
+                        limited -> "Geladen: ${channelCount} Sender mit Programm (gekürzt, Speicher knapp)"
+                        else -> "Geladen: ${channelCount} Sender mit Programm"
+                    }
+                    revision++
+                }
+            }
+            if (usePolish) launch {
+                while (true) {
+                    val data = try {
+                        PolishGuide.load(app, live)
+                    } catch (e: CancellationException) { throw e }
+                    catch (_: Exception) { null }
+                    currentCoroutineContext().ensureActive()
+                    publish(extraData = data, publicFailed = data == null)
+                    // Keep a TV that stays in the app overnight current. Retry a failed fetch sooner.
+                    kotlinx.coroutines.delay(if (data == null) 15 * 60_000L else 12 * 3_600_000L)
+                }
+            }
+            var error: String? = null
+            var truncated = false
             val map = HashMap<String, MutableList<EpgEntry>>()
-            var err: String? = null
-            truncated = false
-            // Channels with archive (catchup): also keep past shows (at most 7 days, memory)
             val past = HashMap<String, Int>()
-            for (it in items) {
-                val id = it.tvgId ?: continue
-                val d = Catchup.of(it)?.days ?: continue
-                val k = id.lowercase()
-                past[k] = maxOf(past[k] ?: 0, d.coerceAtMost(7))
+            for (item in live) {
+                val id = item.tvgId?.lowercase() ?: continue
+                val days = Catchup.of(item)?.days ?: continue
+                past[id] = maxOf(past[id] ?: 0, days.coerceAtMost(7))
             }
-            for (u in all) {
-                try { parse(u, wanted, map, past) } catch (e: Exception) { err = if (e is PlaylistError) e.message else e.javaClass.simpleName }
+            if (wanted.isNotEmpty()) for (url in all) {
+                currentCoroutineContext().ensureActive()
+                try { if (parse(url, wanted, map, past)) truncated = true }
+                catch (e: Exception) { error = if (e is PlaylistError) e.message else e.javaClass.simpleName }
             }
-            progs.clear()
-            for ((k, v) in map) progs[k] = v.sortedBy { it.start }
-            channelCount = progs.size
-            status = if (progs.isEmpty()) "Keine Programmdaten erhalten (${err ?: "leer"})"
-            else if (truncated) "Geladen: ${progs.size} Sender mit Programm (gekürzt, Speicher knapp)"
-            else "Geladen: ${progs.size} Sender mit Programm"
+            currentCoroutineContext().ensureActive()
+            publish(primaryData = map.mapValues { (_, entries) -> entries.sortedBy { it.start } }, error = error, truncated = truncated)
         }
     }
 
@@ -119,12 +183,11 @@ object Xmltv {
 
     private const val MAX_PER_CHANNEL = 80
     private const val MAX_DESC = 400
-    @Volatile private var truncated = false
 
     private fun shortDesc(d: String): String =
         if (d.length <= MAX_DESC) d else d.substring(0, d.lastIndexOf(' ', MAX_DESC).takeIf { it > MAX_DESC / 2 } ?: MAX_DESC) + " …"
 
-    private fun parse(url: String, wanted: Set<String>, out: HashMap<String, MutableList<EpgEntry>>, past: Map<String, Int> = emptyMap()) {
+    private fun parse(url: String, wanted: Set<String>, out: HashMap<String, MutableList<EpgEntry>>, past: Map<String, Int>): Boolean {
         client.newCall(Request.Builder().url(url).build()).execute().use { r ->
             if (!r.isSuccessful) throw PlaylistError("HTTP ${r.code}")
             var ins: InputStream = BufferedInputStream((r.body ?: throw PlaylistError("leer")).byteStream())
@@ -162,10 +225,11 @@ object Xmltv {
                         if (l.size < MAX_PER_CHANNEL + pd * 48) l.add(EpgEntry(pool.of(title), shortDesc(desc), s, e))
                     }
                     // Memory is getting tight: stop and keep what has been read so far (better gaps in the program than a crash)
-                    if (++seen % 5000 == 0 && Mem.heapTight(0.70)) { truncated = true; return }
+                    if (++seen % 5000 == 0 && Mem.heapTight(0.70)) return true
                 }
                 ev = p.next()
             }
+            return false
         }
     }
 }
@@ -185,7 +249,7 @@ object Epg {
     fun trim() = cache.clear()
     private val LIVE_RE = Regex("""^(https?://[^/]+)/(?:live/)?([^/]+)/([^/]+)/(\d+)(?:\.\w+)?(?:\?.*)?$""")
 
-    fun supported(item: Item): Boolean = LIVE_RE.matches(item.url) || Xmltv.has(item.tvgId)
+    fun supported(item: Item): Boolean = LIVE_RE.matches(item.url) || Xmltv.has(item)
 
     /** Address of the Xtream program query [action] for a channel or null if the channel has no Xtream address. */
     internal fun xtreamApi(item: Item, action: String): String? {
@@ -225,14 +289,20 @@ object Epg {
     /** Running and upcoming shows of a channel. Order: cache, loaded XMLTV (immediately), then Xtream query. */
     suspend fun now(item: Item): List<EpgEntry> {
         val nowMs = System.currentTimeMillis()
-        val nowSec = nowMs / 1000
-        cache[item.id]?.let { if (nowMs - it.first < 120_000) return it.second }
-        // Everything below (XMLTV filter, JSON parsing, Base64) runs off the main thread, whoever calls this
-        return withContext(Dispatchers.Default) { nowFresh(item, nowMs, nowSec) }
+        peek(item)?.let { if (Xmltv.donor(item) == null || current(it) != null) return it }
+        return withContext(Dispatchers.Default) {
+            val primary = nowFresh(item, nowMs, nowMs / 1000)
+            val shows = supplement(item, primary, nowMs / 1000)
+            val donor = Xmltv.donor(item)
+            if (donor != null && current(shows) == null) fillGuideGaps(shows, now(donor)).take(8) else shows
+        }
     }
 
+    private fun supplement(item: Item, primary: List<EpgEntry>, now: Long): List<EpgEntry> =
+        fillGuideGaps(primary.filter { it.end > now }, Xmltv.extra(item).filter { it.end > now }).take(8)
+
     private suspend fun nowFresh(item: Item, nowMs: Long, nowSec: Long): List<EpgEntry> {
-        val local = Xmltv.forChannel(item.tvgId).filter { it.end > nowSec }
+        val local = Xmltv.primary(item).filter { it.end > nowSec }
         if (local.isNotEmpty() && current(local) != null) return local.take(8).also { cache[item.id] = nowMs to it }
         val url = xtreamApi(item, "get_short_epg")
         if (url != null) {
@@ -248,7 +318,8 @@ object Epg {
     /** Cached result of [now] if it is still fresh, without any lookup or network (cheap enough for composition). */
     fun peek(item: Item): List<EpgEntry>? {
         val c = cache[item.id] ?: return null
-        return if (System.currentTimeMillis() - c.first < 120_000) c.second else null
+        val now = System.currentTimeMillis()
+        return if (now - c.first < 120_000) supplement(item, c.second, now / 1000) else null
     }
 
     fun current(list: List<EpgEntry>): EpgEntry? {

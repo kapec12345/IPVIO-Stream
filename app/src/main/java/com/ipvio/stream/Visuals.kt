@@ -45,7 +45,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 
 // ---------------------------------------------------------------------------------------------------------- Placeholders
 
-private fun initialsOf(title: String): String {
+internal fun initialsOf(title: String): String {
     val words = title.replace(Regex("""[^\p{L}\p{N} ]"""), " ").split(' ').filter { it.isNotBlank() }
     return when {
         words.isEmpty() -> "?"

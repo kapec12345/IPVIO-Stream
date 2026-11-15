@@ -14,21 +14,25 @@ object EpgFull {
     suspend fun get(item: Item): List<EpgEntry> {
         val nowMs = System.currentTimeMillis()
         val nowSec = nowMs / 1000
-        cache[item.id]?.let { if (nowMs - it.first < 600_000) return it.second }
+        peek(item)?.let { if (Xmltv.donor(item) == null || Epg.current(it) != null) return it }
         // The full program table can hold days of shows: parsing and Base64 decoding run off the main thread, whoever calls this
-        return withContext(Dispatchers.Default) { getFresh(item, nowMs, nowSec) }
+        return withContext(Dispatchers.Default) {
+            val guide = fillGuideGaps(getFresh(item, nowMs, nowSec), Xmltv.extra(item))
+            val donor = Xmltv.donor(item)
+            if (donor != null && Epg.current(guide) == null) fillGuideGaps(guide, get(donor)) else guide
+        }
     }
 
     /** Cached program if still fresh, without lookup or network (cheap enough for composition). */
     fun peek(item: Item): List<EpgEntry>? {
         val c = cache[item.id] ?: return null
-        return if (System.currentTimeMillis() - c.first < 600_000) c.second else null
+        return if (System.currentTimeMillis() - c.first < 600_000) fillGuideGaps(c.second, Xmltv.extra(item)) else null
     }
 
     private suspend fun getFresh(item: Item, nowMs: Long, nowSec: Long): List<EpgEntry> {
         val days = Catchup.of(item)?.days ?: 0
         val from = if (days > 0) nowSec - days * 86400L else nowSec - 3600
-        val local = Xmltv.forChannel(item.tvgId).filter { it.end > from }
+        val local = Xmltv.primary(item).filter { it.end > from }
         // With archive, XMLTV is only enough if it also contains past shows
         val localOk = local.size >= 3 && local.any { it.end > nowSec } && (days == 0 || local.first().start <= nowSec - 6 * 3600)
         if (localOk) return local

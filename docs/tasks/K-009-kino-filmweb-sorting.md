@@ -1,0 +1,9 @@
+# K-009 – Kino catalog sorting
+
+Movie and series browsing offers ascending and descending Filmweb score and production year. Unknown values follow known values in either direction. Equal displayed scores retain playlist order. The minimum score filter and top-rated shelves use the same Filmweb community score. The conflicting provider score is removed from Kino posters, previews, search and the title header. Favorites keep their separate action icon.
+
+Sorting starts from a local snapshot, including previous Filmweb results and already downloaded provider years. While a Filmweb sort or score filter is open, the app fills missing results sequentially. Year sorting only looks up missing years. Leaving the screen cancels the work. Refresh order applies newly available information without moving the selected title while browsing.
+
+The Filmweb database imports previous cache entries and keeps the existing success and miss lifetimes. Scoring requires the same title, media type and known production year as the poster lookup. The TV only sends title searches and public production IDs to Filmweb.
+
+Verified 1.4.9-pl (14) on the Philips after an in-place upgrade with the matching signature. All 19 targeted unit tests passed. The TV retained the original 15,795 movies, 1,523 series and 710 channels. The first ten rated movie posters were ordered correctly ascending and descending. An ascending movie result included Allen (2026, 5.1) after the titles at 5.0. The movie year check started at 1931, then 1935 and 1937. Both Filmweb directions also passed for series. The ascending series year check started with 1963, 1964 and 1967. Search, the poster and the open Allen detail showed 5.1. Details showed 120 votes and no separate 7.2 provider score, which had been observed on the same TV before upgrading.

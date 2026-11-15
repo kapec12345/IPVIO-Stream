@@ -184,7 +184,7 @@ fun ChannelOverlay(
     LaunchedEffect(chanCat) { ls.scrollToItem(maxOf(startIdx - 2, 0)) }
     val fc = focusedCh ?: curItem
     // Program of the highlighted channel: only after a short pause and not while Up/Down is held (before, every step started a request)
-    val fe by produceState(emptyList<EpgEntry>(), fc?.id) {
+    val fe by produceState(emptyList<EpgEntry>(), fc?.id, Xmltv.revision) {
         value = emptyList()
         if (fc == null) return@produceState
         EpgFull.peek(fc)?.let { value = it; return@produceState }
@@ -357,7 +357,7 @@ private fun ChannelRow(item: Item, current: Boolean, modifier: Modifier, onFocus
     var f by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(DS.RadiusS)
     // Cached program at once; otherwise wait briefly and not while Up/Down is held (rows that fly past load nothing)
-    val epg by produceState(Epg.peek(item) ?: emptyList(), item.id) {
+    val epg by produceState(Epg.peek(item) ?: emptyList(), item.id, Xmltv.revision) {
         val cached = Epg.peek(item)
         value = cached ?: emptyList()
         if (cached != null) return@produceState

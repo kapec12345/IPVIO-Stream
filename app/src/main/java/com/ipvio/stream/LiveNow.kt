@@ -101,7 +101,7 @@ fun LiveNowPanel(ch: Item?, modifier: Modifier = Modifier) {
     if (ch == null) return
     Crossfade(ch, animationSpec = tween(if (Look.motion == 0) 0 else 400), label = "liveNow", modifier = modifier) { c ->
         // null = still loading (cached data is shown right away); parsing off the main thread
-        val loaded by produceState(Epg.peek(c), c.id) { if (value == null) value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { Epg.now(c) } }
+        val loaded by produceState(Epg.peek(c), c.id, Xmltv.revision) { value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { Epg.now(c) } }
         val epg = loaded ?: emptyList()
         val nowE = Epg.current(epg)
         val next = if (nowE != null) epg.filter { it.start >= nowE.end }.take(2) else epg.take(2)

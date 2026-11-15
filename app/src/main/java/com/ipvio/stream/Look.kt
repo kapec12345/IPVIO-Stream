@@ -1,6 +1,7 @@
 package com.ipvio.stream
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
@@ -81,6 +82,12 @@ object Look {
 
     val MOTION = listOf("Aus", "Dezent", "Normal")
     val SCALES = listOf("Automatisch", "85 %", "100 %", "115 %", "130 %")
+
+    var vod by mutableStateOf(false)
+        internal set
+    internal val siblingOpacity get() = if (vod) .82f else .5f
+    internal val posterFocus get() = if (vod) Color.White else Color(0x40FFFFFF)
+    internal var savedStyles by mutableStateOf(SavedStyles())
 
     var accentIdx by mutableIntStateOf(DEFAULT_ACCENT)
     /** Custom color 1 (surfaces, buttons, bars). */
