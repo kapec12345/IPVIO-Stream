@@ -27,4 +27,13 @@ class KinoPosterTest {
         val fields = mapOf("cover_big" to "N/A", "cover" to "https://source.example/poster.jpg")
         assertEquals(fields["cover"], ProviderLogic.infoOf(fields, null, listOf("cover_big", "cover")).cover)
     }
+
+    @Test fun tinyProviderPreviewsPreferVerifiedFullPostersAndKeepFallback() {
+        val eden = "https://media.upflix.pl/renditions/1068817/v0/poster_card@1.webp"
+        val strife = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTTCP3-_pBAfqj-2-PTgK6KzpsHCSjfEHV-8g&s"
+        assertEquals(listOf("https://fwcdn.pl/fpo/01/30/10060130/8245725.3.jpg", eden), KinoPosterArt.sources(eden))
+        assertEquals(listOf("https://grodzisksport.pl/files/image/strife_mma.jpg", strife), KinoPosterArt.sources(strife))
+        val different = eden.replace("1068817", "1068818")
+        assertEquals(listOf(different), KinoPosterArt.sources(different))
+    }
 }

@@ -24,6 +24,28 @@ class FilmwebTest {
         assertNull(Filmweb.match(listOf(1), "film", 2020) { preview(it, 2020) })
     }
 
+    @Test fun aUniqueExactTitleCanHaveADifferentProviderYear() = runBlocking {
+        val found = JSONObject("""{"searchHits":[{"id":10133758,"type":"serial","matchedTitle":"Apollo w ogniu"},{"id":7,"type":"film","matchedTitle":"Apollo w ogniu"},{"id":8,"type":"serial","matchedTitle":"Apollo w ogniu 2"}]}""")
+        val ids = Filmweb.candidates(found, "PL - Apollo w ogniu", "serial")
+        val matched = Filmweb.match(ids, "serial", 2024) { preview(it, 2026) }
+        assertEquals(Filmweb.Title(10133758, 2026), matched)
+        assertNull(Filmweb.match(ids, "serial", 2024) { preview(7, 2026) })
+    }
+
+    @Test fun anIncompleteNamesakeLookupCannotBecomeAUniqueMatch() = runBlocking {
+        val ids = listOf(1, 3)
+        assertNull(Filmweb.match(ids, "serial", 2020) { if (it == 1) preview(it, 2020) else null })
+        assertNull(Filmweb.match(ids, "serial", 2020) { preview(it, if (it == 1) 2020 else 0) })
+    }
+
+    @Test fun retriesOldMissesAndRetainsOldScoresAndCurrentMisses() {
+        assertNull(FilmwebStore.decode(JSONObject("""{"at":1,"year":0}""")))
+        assertEquals(FilmwebResult.Missing, FilmwebStore.decode(JSONObject("""{"at":1,"year":0,"matchVersion":2}""")))
+        assertEquals(FilmwebResult.Rating(3, 6.1, 5, 2026),
+            FilmwebStore.decode(JSONObject("""{"id":3,"year":2026,"rate":6.1,"count":5}""")))
+        assertEquals(FilmwebResult.Unrated(2026), FilmwebStore.decode(JSONObject("""{"id":3,"year":2026}""")))
+    }
+
     @Test fun usesCommunityScoreForTheMatchedIdOnly() {
         val rating = JSONObject("""{"id":1,"rate":7.68,"count":1234,"countWantToSee":521}""")
         assertEquals(FilmwebResult.Rating(1, 7.68, 1234), Filmweb.rating(rating, 1))

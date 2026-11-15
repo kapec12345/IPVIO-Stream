@@ -85,4 +85,29 @@ class ProviderLogicTest {
         assertEquals("dQw4w9WgXcQ", i.trailer)
         assertTrue(ProviderLogic.infoOf(emptyMap(), null, listOf("cover")).isEmpty())
     }
+
+    @Test fun formattedRuntimeAndExplicitMinutesHandleMislabeledSeconds() {
+        assertEquals(103, ProviderLogic.minutes("103", "01:43:00", null, "103"))
+        assertEquals(106, ProviderLogic.minutes("111", "01:46:08", null, "111"))
+        assertEquals(103, ProviderLogic.minutes("103", null, null, "103"))
+        assertEquals(43, ProviderLogic.minutes("2611", "00:43:31", null))
+        assertEquals(44, ProviderLogic.minutes("2680", "00:44:40", null))
+        assertEquals(1, ProviderLogic.minutes("28", null, null))
+        assertEquals(92, ProviderLogic.minutes("5520", "00:99:03", null))
+        assertNull(ProviderLogic.minutes("NaN", "00:00:00", "0"))
+    }
+
+    @Test fun sourceEpisodeKeysMatchAcrossFormatsButKeepAccountsSeparate() {
+        assertEquals("https://host/series/u/p/10", ProviderLogic.episodeResource("https://host/series/u/p/10.mp4?quality=hd"))
+        assertNull(ProviderLogic.episodeResource("https://host/movie/u/p/10.mp4"))
+        assertFalse(ProviderLogic.episodeResource("https://host/series/u/p/10.mkv") ==
+            ProviderLogic.episodeResource("https://host/series/other/p/10.mkv"))
+    }
+
+    @Test fun trailersUseTheMatchingSeriesAndRetainOtherProviderVideos() {
+        assertEquals("DZCrJcIPKVs", ProviderLogic.trailerFor("Apollo w ogniu", "6HZ_mInIfk4"))
+        assertEquals("6HZ_mInIfk4", ProviderLogic.trailerFor("Paris Has Fallen", "6HZ_mInIfk4"))
+        assertEquals("M9NWvGZViCg", ProviderLogic.trailerFor("Na wschód od Edenu", "https://youtu.be/M9NWvGZViCg"))
+        assertNull(ProviderLogic.trailerFor("Film", "N/A"))
+    }
 }

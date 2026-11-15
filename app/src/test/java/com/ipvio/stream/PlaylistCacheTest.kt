@@ -59,6 +59,49 @@ http://h/series/u/p/8.mkv
         assertSame(g[0].group, g[1].group)
     }
 
+    @Test fun liveMovieChannelsStayInTheGuideAndRecordingsStayInVod() {
+        val playlist = """#EXTM3U
+#EXTINF:-1 tvg-id="canal.premium" catchup="xc" catchup-days="3" group-title="PL| FILMOWE",PL| CANAL+ PREMIUM FHD
+https://tv/live/user/pass/42.ts
+#EXTINF:-1 group-title="PL| FILMOWE",PL| CANAL+ PREMIUM HD
+https://tv/live/user/pass/43.ts
+#EXTINF:-1 group-title="Movie Channels",Station S01E01
+https://tv/iptv/LIVE/user/pass/44.m3u8?format=ts
+#EXTINF:-1 group-title="PL| FILMOWE",A movie (2026)
+https://tv/movie/live/pass/45.mp4?next=/live/x/y/46.ts
+#EXTINF:-1 group-title="PL| FILMOWE",A series S01E01
+https://tv/series/user/live/46.mkv
+#EXTINF:-1 group-title="VOD",Standalone movie
+https://cdn.example/47
+"""
+        val parsed = M3uParser.parseStream(playlist.reader())
+        val live = parsed.items.filter { it.kind == Kind.LIVE }
+        assertEquals(listOf("PL| CANAL+ PREMIUM FHD", "PL| CANAL+ PREMIUM HD", "Station S01E01"), live.map { it.title })
+        assertEquals("canal.premium", live.first().tvgId)
+        assertTrue(live.first().id in parsed.catchup)
+        assertEquals(listOf("A movie", "Standalone movie"), parsed.items.filter { it.kind == Kind.MOVIE }.map { it.title })
+        assertEquals("A series", parsed.items.single { it.kind == Kind.SERIES }.title)
+        assertEquals(live, M3uParser.parseStream(playlist.reader(), setOf(LangTagLogic.NO_VOD)).items)
+        assertEquals(3, M3uParser.parseStream(playlist.reader(), setOf(LangTagLogic.NO_LIVE)).items.size)
+    }
+
+    @Test fun legacySnapshotWithoutSourceStillSeparatesChannelFromMovie() {
+        val old = listOf(
+            Item("station", Kind.MOVIE, "CANAL+ PREMIUM", null, "https://tv/live/u/p/12.ts", null, "PL| FILMOWE", lang = "pl", addedAt = 100),
+            Item("film", Kind.MOVIE, "Film", 2025, "https://tv/movie/u/p/13.mp4", null, "PL| FILMOWE", lang = "pl", addedAt = 200)
+        )
+        val stream = ByteArrayOutputStream()
+        PlaylistCacheIO.write(stream, "list", old, emptyList(), emptyMap())
+        val bytes = stream.toByteArray()
+        java.nio.ByteBuffer.wrap(bytes).putInt(6)
+        assertEquals(6, PlaylistCacheIO.readHeader(bytes.inputStream(), "list")!!.version)
+        val live = PlaylistCacheIO.read(bytes.inputStream(), "list", setOf(LangTagLogic.NO_VOD))!!.items.single()
+        assertEquals(Kind.LIVE, live.kind)
+        assertEquals("station", live.id)
+        assertEquals(0L, live.addedAt)
+        assertEquals(listOf(old.last()), PlaylistCacheIO.read(bytes.inputStream(), "list", setOf(LangTagLogic.NO_LIVE))!!.items)
+    }
+
     private fun roundTrip(hidden: Set<String>): PlaylistCacheIO.Cached? {
         val out = ByteArrayOutputStream()
         PlaylistCacheIO.write(out, "http://x/get.php", items, listOf("http://epg"), mapOf("DE | News" to 0))
