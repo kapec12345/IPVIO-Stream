@@ -32,6 +32,15 @@ internal object KinoPosterArt {
     private val smallTmdb = Regex("""^(https?://image\.tmdb\.org/t/p/)(w92|w154|w185|w342)/(.+)$""", RegexOption.IGNORE_CASE)
     fun sources(url: String?): List<String> {
         if (url.isNullOrBlank()) return emptyList()
+        // These playlist thumbnails identify the exact artwork. Keep the original as a fallback.
+        val fullPoster = when (url) {
+            "https://media.upflix.pl/renditions/1068817/v0/poster_card@1.webp" ->
+                "https://fwcdn.pl/fpo/01/30/10060130/8245725.3.jpg"
+            "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTTCP3-_pBAfqj-2-PTgK6KzpsHCSjfEHV-8g&s" ->
+                "https://grodzisksport.pl/files/image/strife_mma.jpg"
+            else -> null
+        }
+        if (fullPoster != null) return listOf(fullPoster, url)
         val m = smallTmdb.matchEntire(url) ?: return listOf(url)
         return listOf(m.groupValues[1] + "w500/" + m.groupValues[3], url)
     }

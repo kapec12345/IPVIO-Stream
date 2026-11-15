@@ -173,10 +173,13 @@ object MetaRepo {
         if (i.kind == Kind.LIVE || !ProviderLogic.supports(i)) return null
         val k = "P|" + key(i)
         provMem[k]?.let { return withOmdbTitle(ctx, k, i, it) }
-        provFail[k]?.let { if (System.currentTimeMillis() - it < 120_000L) return null }
+        provFail[k]?.let { if (System.currentTimeMillis() - it < 120_000L) return load(ctx, k, allowLegacyProvider = true) }
         load(ctx, k)?.let { provMem[k] = it; return withOmdbTitle(ctx, k, i, it) }
         val m = ProviderInfo.fetch(ctx, i)
-        if (m == null) { provFail[k] = System.currentTimeMillis(); return null }
+        if (m == null) {
+            provFail[k] = System.currentTimeMillis()
+            return load(ctx, k, allowLegacyProvider = true)
+        }
         provMem[k] = m
         save(ctx, k, m)
         return withOmdbTitle(ctx, k, i, m)
@@ -268,12 +271,13 @@ object MetaRepo {
             j.put("gids", m.genreIds.joinToString(",")); j.put("lang", m.lang); j.put("votes", m.votes)
             j.put("countries", m.countries.joinToString(",")); j.put("ui", m.uiLang)
             j.put("chk", m.checked); j.put("v", MATCH_V)
+            if (k.startsWith("P|")) j.put("runtimeVersion", 1)
             File(dir(c), k.hashCode().toString()).writeText(j.toString())
         } catch (e: Exception) {
         }
     }
 
-    private suspend fun load(c: Context, k: String): Meta? = withContext(Dispatchers.IO) {
+    private suspend fun load(c: Context, k: String, allowLegacyProvider: Boolean = false): Meta? = withContext(Dispatchers.IO) {
         try {
             val f = File(dir(c), k.hashCode().toString())
             if (!f.exists()) return@withContext null
@@ -281,11 +285,13 @@ object MetaRepo {
             if (System.currentTimeMillis() - j.optLong("ts") > TTL) return@withContext null
             // Not found earlier (often because of "DE - " before the title): try again with the improved search
             if (j.getInt("tmdbId") == -1 && j.optInt("v") < MATCH_V) return@withContext null
+            val staleRuntime = k.startsWith("P|") && !j.isNull("runtime") && j.optInt("runtimeVersion") < 1
+            if (staleRuntime && !allowLegacyProvider) return@withContext null
             Meta(
                 j.getInt("tmdbId"), j.getBoolean("isTv"), j.str("poster"), j.str("backdrop"), j.str("overview"),
                 j.dbl("rating"), j.str("year"),
                 (j.str("genres") ?: "").split("|").filter { it.isNotBlank() },
-                if (j.has("runtime") && !j.isNull("runtime")) j.getInt("runtime") else null,
+                if (!staleRuntime && !j.isNull("runtime")) j.getInt("runtime") else null,
                 j.str("trailer"), j.str("imdbId"), j.str("imdbRating"), j.str("rt"), j.optBoolean("ext"),
                 (j.str("gids") ?: "").split(",").mapNotNull { it.toIntOrNull() },
                 j.str("lang"), votes = j.optInt("votes"),

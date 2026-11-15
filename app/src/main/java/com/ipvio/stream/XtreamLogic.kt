@@ -36,6 +36,16 @@ object XtreamLogic {
         return Acct(m.groupValues[1].trimEnd('/'), u, pw)
     }
 
+    /** Xtream uses Unix seconds; some providers return milliseconds. Empty and zero mean no published date. */
+    fun expiryMillis(raw: String?): Long? {
+        val value = raw?.trim()?.toLongOrNull() ?: return null
+        return when (value) {
+            in 1L..9_999_999_999L -> value * 1000L
+            in 1_000_000_000_000L..253_402_300_799_999L -> value
+            else -> null
+        }
+    }
+
     private fun qEnc(s: String) = URLEncoder.encode(s, "UTF-8")
 
     /** Part of a path: as usual with providers unchanged, only special characters are encoded. */

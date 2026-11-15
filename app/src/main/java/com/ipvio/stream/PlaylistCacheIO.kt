@@ -8,6 +8,7 @@ import java.io.OutputStream
 
 /**
  * Binary cache of the playlist (without Android, testable).
+ * Version 7 marks catalogs parsed with explicit live routes taking priority. The binary layout is unchanged.
  * Version 6 adds the catalog arrival time before each item title. Versions 3–5 remain readable.
  * Version 5: contains only the shown languages (large providers: 800,000 entries → e.g. 120,000) and in the head
  * the count and amount of data per language of the whole list as well as the languages hidden at that time.
@@ -15,7 +16,7 @@ import java.io.OutputStream
  * Version 4 (whole list, language at the front of each entry) and 3 (without language) are still read.
  */
 object PlaylistCacheIO {
-    const val VERSION = 6
+    const val VERSION = 7
     private const val MAX_STR = 1 shl 20      // 1 MB per text: anything larger can only be a corrupt file
     private const val MAX_COUNT = 2_000_000
 
@@ -25,7 +26,7 @@ object PlaylistCacheIO {
      */
     class Cached(
         val items: List<Item>, val epg: List<String>, val order: Map<String, Int>, val counts: Map<String, Int>,
-        val bytes: Map<String, Long> = emptyMap(), val hidden: Set<String>? = null
+        val bytes: Map<String, Long> = emptyMap(), val hidden: Set<String>? = null, val version: Int = VERSION
     )
 
     /**
@@ -83,7 +84,7 @@ object PlaylistCacheIO {
      */
     fun readHeader(input: InputStream, url: String): Cached? {
         val h = DataInputStream(input).head(url) ?: return null
-        return Cached(emptyList(), h.epg, h.order, h.counts ?: emptyMap(), h.bytes, h.hidden)
+        return Cached(emptyList(), h.epg, h.order, h.counts ?: emptyMap(), h.bytes, h.hidden, h.version)
     }
 
     /** Read only IDs and arrival dates from the previous successful snapshot, skipping episode lists. */
@@ -118,7 +119,7 @@ object PlaylistCacheIO {
             if (check != null && k % 2000 == 1999) check()
         }
         items.trimToSize()
-        return Cached(items, h.epg, h.order, h.counts ?: counts, h.bytes, h.hidden)
+        return Cached(items, h.epg, h.order, h.counts ?: counts, h.bytes, h.hidden, h.version)
     }
 
     private fun DataInputStream.count(): Int {
@@ -166,18 +167,20 @@ object PlaylistCacheIO {
     /** Reads an entry; hidden languages return null (they are counted anyway). */
     private fun DataInputStream.readItem(version: Int, pool: StringPool, hidden: Set<String>, counts: HashMap<String, Int>): Item? {
         val id = str() ?: ""
-        val kind = Kind.entries.getOrNull(readInt()) ?: throw IOException("Zwischenspeicher beschädigt")
+        var kind = Kind.entries.getOrNull(readInt()) ?: throw IOException("Zwischenspeicher beschädigt")
         var lang: String? = if (version >= 4) pool.of(str() ?: LangTagLogic.UNKNOWN) else null
         val added = if (version >= 6) readLong() else 0L
+        val checkLive = version < 7 && kind == Kind.MOVIE
         if (lang != null) {
             counts[lang] = (counts[lang] ?: 0) + 1
-            if (LangTagLogic.hides(hidden, lang, kind)) { skipItemRest(); return null }
+            if (lang in hidden || (!checkLive && LangTagLogic.hides(hidden, lang, kind))) { skipItemRest(); return null }
         }
         // Older caches: titles still with "&amp;" or "|EN|" – clean up while reading (fast, mostly unchanged)
         val rawTitle = str() ?: ""
-        val title = if (kind == Kind.LIVE) TitleText.decode(rawTitle) else TitleText.title(rawTitle)
         val y = readInt()
         val url = str() ?: ""
+        if (checkLive && M3uParser.isLiveStream(url)) kind = Kind.LIVE
+        val title = if (kind == Kind.LIVE) TitleText.decode(rawTitle) else TitleText.title(rawTitle)
         val logo = str()
         val group = pool.of(str() ?: "")
         val quality = pool.ofOrNull(str())
@@ -200,11 +203,11 @@ object PlaylistCacheIO {
         if (lang == null) {
             lang = pool.of(LangTagLogic.of(group, rawTitle, kind == Kind.LIVE))
             counts[lang] = (counts[lang] ?: 0) + 1
-            if (LangTagLogic.hides(hidden, lang, kind)) return null
         }
+        if (LangTagLogic.hides(hidden, lang, kind)) return null
         return Item(
-            id = id, kind = kind, title = title, year = if (y < 0) null else y, url = url, logo = logo,
-            group = group, episodes = EpisodeTable.of(eps, pool), quality = quality, tvgId = tvg, lang = lang, addedAt = added
+            id = id, kind = kind, title = title, year = if (y < 0 || kind == Kind.LIVE) null else y, url = url, logo = logo,
+            group = group, episodes = EpisodeTable.of(eps, pool), quality = quality, tvgId = tvg, lang = lang, addedAt = if (kind == Kind.LIVE) 0L else added
         )
     }
 
