@@ -41,3 +41,11 @@ Names from older notes without a match in the code: "add-on system" (no hit). "M
 
 - 1.4: Google Drive as LiveSync (continuous sync instead of a single backup). Starts after the refactoring. A new OAuth client ID is needed first. TODO: status of resetting the old client secret is unknown.
 - No new features during the refactoring.
+
+### Kino browsing
+
+Movies and Series open with new catalog arrivals and separate recently watched shelves. In recently watched series, a poster with a saved checkpoint shows the episode and time. OK resumes playback directly. A saved next episode starts at the beginning. Titles without a checkpoint still open their details. Previously known titles retain their arrival order across refreshes. Live TV opens the programme grid directly, with a category selector, search and programme details. Selecting a channel starts live playback.
+
+Under Settings → Live TV & Guide, EPG.OVH can supplement the playlist guide for Polish or untagged channels. The app matches station names locally, including provider prefixes and quality suffixes. Provider programmes keep their time slots. The channel list, now/next panels and guide grid use the additional listings when available.
+
+For Polish TVN Player HD entries, a matching UHD edition in the same playlist and category can supply missing programmes. Crime and Investigation HD uses its FHD edition and the official CI Polsat public guide. Ambiguous donor editions are skipped.

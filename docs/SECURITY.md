@@ -13,7 +13,10 @@ It has no accounts and no backend of its own. It does open network connections i
 
 - **Local Wi-Fi:** the phone-remote pages and the Wi-Fi transfer. The TV app runs a small HTTP server on ports 8765–8775 (`PhoneImport.kt:195`).
 - **Playlist providers entered by the user:** Xtream Codes, M3U (URL or file) and Stalker/Ministra portals.
+- **Optional Polish guide:** Enabling EPG.OVH downloads one public compressed XMLTV file over HTTPS. Station matching runs on the device. The feed request contains no playlist address, station list or IPTV credentials. The private HTTP cache has a 20 MiB limit.
 - **Optional metadata services with user-supplied keys:** TMDB and OMDb. TheIntroDB needs no key.
+- For a movie without a Filmweb score, the app can query Cinemeta over HTTPS using the display title, original title or public IMDb ID. The request contains no playlist address or IPTV credentials. Searches and responses are size limited. Up to 256 lookup results are cached in the app's private preferences.
+- Movie and series details and visible Kino posters look up the displayed title on www.filmweb.pl and retrieve public metadata by Filmweb ID. Poster searches are delayed during scrolling and cancelled when the card leaves view. They use no IPTV account data, Filmweb login or API key. Kino also looks up missing title metadata sequentially while the corresponding catalog sorting or filter is open. Leaving the screen cancels that work. Filmweb search results are stored locally in SQLite for seven days for rated titles and one day for unrated or unmatched titles. Existing Filmweb entries are imported on upgrade. The local year index contains catalog identifiers and production years.
 - **GitHub Releases:** in-app update check and download.
 
 ## 2. Reporting
