@@ -8,13 +8,14 @@ import java.io.OutputStream
 
 /**
  * Binary cache of the playlist (without Android, testable).
+ * Version 6 adds the catalog arrival time before each item title. Versions 3–5 remain readable.
  * Version 5: contains only the shown languages (large providers: 800,000 entries → e.g. 120,000) and in the head
  * the count and amount of data per language of the whole list as well as the languages hidden at that time.
  * The whole list is additionally stored compressed on the device (pl_*.m3u.gz); with a different language selection it is parsed again from it.
  * Version 4 (whole list, language at the front of each entry) and 3 (without language) are still read.
  */
 object PlaylistCacheIO {
-    const val VERSION = 5
+    const val VERSION = 6
     private const val MAX_STR = 1 shl 20      // 1 MB per text: anything larger can only be a corrupt file
     private const val MAX_COUNT = 2_000_000
 
@@ -57,7 +58,7 @@ object PlaylistCacheIO {
 
     private fun DataInputStream.head(url: String): Head? {
         val version = readInt()
-        if (version !in 3..5) return null
+        if (version !in 3..VERSION) return null
         if (str() != url.trim()) return null
         val ne = count()
         val epg = ArrayList<String>(ne)
@@ -83,6 +84,22 @@ object PlaylistCacheIO {
     fun readHeader(input: InputStream, url: String): Cached? {
         val h = DataInputStream(input).head(url) ?: return null
         return Cached(emptyList(), h.epg, h.order, h.counts ?: emptyMap(), h.bytes, h.hidden)
+    }
+
+    /** Read only IDs and arrival dates from the previous successful snapshot, skipping episode lists. */
+    internal fun previousDates(input: InputStream, url: String): Pair<Set<String>?, Map<String, Long>>? {
+        val stream = DataInputStream(input)
+        val header = stream.head(url) ?: return null
+        val dates = HashMap<String, Long>()
+        repeat(stream.count()) {
+            val id = stream.str() ?: ""
+            val kind = Kind.entries.getOrNull(stream.readInt()) ?: throw IOException("Invalid catalog kind")
+            if (header.version >= 4) stream.skipStr()
+            val added = if (header.version >= 6) stream.readLong() else 0L
+            if (kind != Kind.LIVE) dates[id] = added
+            stream.skipItemRest()
+        }
+        return header.hidden to dates
     }
 
     /**
@@ -136,7 +153,7 @@ object PlaylistCacheIO {
     }
 
     private fun DataOutputStream.item(i: Item) {
-        str(i.id); writeInt(i.kind.ordinal); str(i.lang); str(i.title); writeInt(i.year ?: -1); str(i.url); str(i.logo); str(i.group)
+        str(i.id); writeInt(i.kind.ordinal); str(i.lang); writeLong(i.addedAt); str(i.title); writeInt(i.year ?: -1); str(i.url); str(i.logo); str(i.group)
         str(i.quality); str(i.tvgId)
         writeInt(i.episodes.size)
         for (e in i.episodes) {
@@ -151,6 +168,7 @@ object PlaylistCacheIO {
         val id = str() ?: ""
         val kind = Kind.entries.getOrNull(readInt()) ?: throw IOException("Zwischenspeicher beschädigt")
         var lang: String? = if (version >= 4) pool.of(str() ?: LangTagLogic.UNKNOWN) else null
+        val added = if (version >= 6) readLong() else 0L
         if (lang != null) {
             counts[lang] = (counts[lang] ?: 0) + 1
             if (LangTagLogic.hides(hidden, lang, kind)) { skipItemRest(); return null }
@@ -186,7 +204,7 @@ object PlaylistCacheIO {
         }
         return Item(
             id = id, kind = kind, title = title, year = if (y < 0) null else y, url = url, logo = logo,
-            group = group, episodes = EpisodeTable.of(eps, pool), quality = quality, tvgId = tvg, lang = lang
+            group = group, episodes = EpisodeTable.of(eps, pool), quality = quality, tvgId = tvg, lang = lang, addedAt = added
         )
     }
 

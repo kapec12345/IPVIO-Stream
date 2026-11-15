@@ -42,6 +42,7 @@ fun Modifier.trackFocus(fr: FocusRequester): Modifier {
 }
 
 object LastFocus {
+    fun seriesPoster(id: String) = "series-history|$id"
     var pending: String? = null
 }
 
@@ -100,10 +101,10 @@ object RowStates {
 }
 
 @Composable
-fun Modifier.restoreFocus(id: String): Modifier {
+fun Modifier.restoreFocus(id: String, seriesHistory: Boolean = false): Modifier {
     val fr = remember { FocusRequester() }
     LaunchedEffect(Unit) {
-        if (LastFocus.pending == id) {
+        if (LastFocus.pending == id || (seriesHistory && LastFocus.pending == LastFocus.seriesPoster(id))) {
             delay(150)
             runCatching { fr.requestFocus() }
             LastFocus.pending = null

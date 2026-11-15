@@ -1327,7 +1327,7 @@ Jetzt live auf deinen Sendern¦Na żywo teraz na swoich kanałach
 Ergebnisse werden geladen …¦Ładowanie wyników…
 Ergebnisse gerade nicht erreichbar – es werden nur Playlist und TV-Guide gezeigt.¦Wyniki są obecnie nieosiągalne – wyświetlana jest tylko lista odtwarzania i przewodnik telewizyjny.
 Dokumentationen¦Filmy dokumentalne
-Zuletzt gesehen¦Ostatnio oglądane Pozostało
+Zuletzt gesehen¦Ostatnio oglądane
 noch¦pozostało
 ▲▼ Sender  ·  OK Steuerung  ·  OK halten: mehr¦▲▼ kanały · OK elementy sterujące · przytrzymaj OK, aby uzyskać więcej
 Meine Teams¦Moje zespoły
@@ -1522,7 +1522,7 @@ Meine Sportarten¦Moje sporty
 Heute für dich¦Dziś dla Was
 Heute keine Spiele deiner Favoriten.¦Dziś nie ma gier z Twoich ulubionych.
 Noch keine Teams gemerkt. Im Team Center gibt es „Team merken“.¦Nie zapisano jeszcze żadnych drużyn. Użyj opcji „Zapisz zespół” w Centrum zespołu.
-Design und Farbe¦Projekt i kolor
+Design und Farbe¦Wygląd i kolory
 Berechtigung erteilt. Der Autostart ist bereit.¦Pozwolenie udzielone. Autostart jest gotowy.
 Berechtigung fehlt noch. Bitte „Einstellung öffnen“ wählen und IPVIO Stream erlauben.¦Nadal brakuje pozwolenia. Wybierz „Otwórz ustawienie” i zezwól na transmisję IPVIO.
 Hauptliste¦lista główna Pokazano również
@@ -1916,4 +1916,33 @@ Untertitel-Suche (SubDL) findet bei Serien wieder Treffer¦Wyszukiwanie napisów
 Bildformate heißen so, wie sie wirken („Zuschneiden“)¦Nazwy trybów proporcji zależą od ich funkcji („Przytnij”)
 Viele fehlende Übersetzungen ergänzt¦Dodano wiele brakujących tłumaczeń
 Hoch/Runter blättert¦Przewijanie w górę/w dół
+Kataloglayout¦Układ katalogu
+Klassisch¦Klasyczny
+Meine Designs¦Moje wyglądy
+Wähle ein Layout und stelle unten Farben, Hintergrund, Größe und Animationen ein. Speichere die Kombination unter einem Namen.¦Wybierz układ, a poniżej ustaw kolory, tło, skalę i animacje. Zapisz zestaw pod własną nazwą.
+Als neues Design speichern¦Zapisz jako nowy wygląd
+Designname¦Nazwa wyglądu
+Gib einen eindeutigen Namen ein.¦Podaj nazwę, której jeszcze nie ma na liście.
+Das gewählte Design wurde angepasst.¦Bieżące ustawienia różnią się od zapisanego wyglądu.
+Änderungen im Design speichern¦Zapisz zmiany w wybranym wyglądzie
+Design umbenennen¦Zmień nazwę wyglądu
+Design löschen¦Usuń wybrany wygląd
+Gewähltes Design¦Wybrany wygląd
+Filmweb: höchste zuerst¦Filmweb — od najwyższej
+Filmweb: niedrigste zuerst¦Filmweb — od najniższej
+Produktionsjahr: neueste zuerst¦Rok produkcji — od najnowszych
+Produktionsjahr: älteste zuerst¦Rok produkcji — od najstarszych
+Sortierung aktualisieren¦Odśwież kolejność
+Zuletzt geschaute Filme¦Ostatnio oglądane filmy
+Folge fortsetzen¦Kontynuuj odcinek
+Zuletzt geschaute Serien¦Ostatnio oglądane seriale
+Hier erscheinen deine gestarteten Filme.¦Tutaj pojawią się filmy po rozpoczęciu oglądania.
+Hier erscheinen Serien, sobald du eine Folge startest.¦Tutaj pojawią się seriale po rozpoczęciu pierwszego odcinka.
+Fehlendes Programm polnischer Sender anhand des Sendernamens ergänzen.¦Uzupełnia brakujący program polskich kanałów po nazwie stacji.
+IMDb-Wertung derzeit nicht verfügbar¦Ocena IMDb jest chwilowo niedostępna
+Keine bestätigte Bewertung bei Filmweb oder IMDb¦Brak potwierdzonej oceny w Filmweb i IMDb
+Stimmen¦Głosy
+Filmweb: Keine eindeutige Bewertung¦Filmweb · brak potwierdzonej oceny
+Filmweb ist vorübergehend nicht erreichbar¦Filmweb jest chwilowo niedostępny
+Filmweb-Bewertung wird geladen¦Pobieranie oceny Filmweb…
 """

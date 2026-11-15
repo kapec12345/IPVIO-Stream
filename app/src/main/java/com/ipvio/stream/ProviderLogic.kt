@@ -90,10 +90,12 @@ object ProviderLogic {
 
     /** Builds [Info] from the provider's text fields (keys as delivered by Xtream). */
     fun infoOf(f: Map<String, String>, backdrop: String?, coverKeys: List<String>): Info {
-        val cover = coverKeys.firstNotNullOfOrNull { clean(f[it]) }
+        val cover = coverKeys.firstNotNullOfOrNull { clean(f[it])?.takeIf { url ->
+            url.startsWith("https://", ignoreCase = true) || url.startsWith("http://", ignoreCase = true)
+        } }
         return Info(
             plot = clean(f["plot"]) ?: clean(f["description"]),
-            cover = cover?.takeIf { it.startsWith("http") },
+            cover = cover,
             backdrop = clean(backdrop)?.takeIf { it.startsWith("http") },
             rating = ratingOf(f["rating"], f["rating_5based"]),
             genres = genres(f["genre"]),

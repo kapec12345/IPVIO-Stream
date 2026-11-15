@@ -83,6 +83,8 @@ open class BlockLayout(private val prefName: String, val blocks: List<LayoutBloc
 private val HOME_BLOCKS = listOf(
     LayoutBlock("hero", "Große Slideshow", "Großes Bild oben mit aktuellen Filmen und Serien", fixed = true),
     LayoutBlock("tiles", "Kacheln", "Live TV, Filme, Serien, Favoriten und Meine Liste"),
+    LayoutBlock("newm", "Neue Filme", "Zuletzt hinzugefügte Filme"),
+    LayoutBlock("news", "Neue Serien", "Zuletzt hinzugefügte Serien"),
     LayoutBlock("resume", "Weiterschauen", "Dort weitermachen, wo du aufgehört hast"),
     LayoutBlock("favch", "Meine Sender", "Deine Live-Favoriten als Reihe"),
     LayoutBlock("chnow", "Live TV gerade", "Was jetzt auf deinen Sendern läuft"),
@@ -90,9 +92,7 @@ private val HOME_BLOCKS = listOf(
     LayoutBlock("because", "Weil du etwas geschaut hast", "Ähnliche Titel zu deinem letzten Film oder deiner letzten Serie"),
     LayoutBlock("wl", "Meine Liste", "Titel, die du dir gemerkt hast"),
     LayoutBlock("hist", "Zuletzt geschaut", "Alles, was du zuletzt gestartet hast"),
-    LayoutBlock("newm", "Neue Filme", "Zuletzt hinzugefügte Filme"),
     LayoutBlock("topm", "Beste Filme", "Die am besten bewerteten Filme"),
-    LayoutBlock("news", "Neue Serien", "Zuletzt hinzugefügte Serien"),
     LayoutBlock("tops", "Beste Serien", "Die am besten bewerteten Serien"),
     LayoutBlock("sg", "Serien nach Genre", "Reihen für die häufigsten Serien-Genres"),
     LayoutBlock("mg", "Filme nach Genre", "Reihen für die häufigsten Film-Genres")

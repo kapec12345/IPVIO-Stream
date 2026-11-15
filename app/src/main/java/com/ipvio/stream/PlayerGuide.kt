@@ -109,6 +109,7 @@ fun Guide(
     all: List<Item> = list,
     /** Channel chosen from another category: continue switching with this list. */
     onPickIn: ((Item, List<Item>) -> Unit)? = null,
+    standalone: Boolean = false,
     onPick: (Item) -> Unit
 ) {
     val ctx = LocalContext.current
@@ -142,12 +143,14 @@ fun Guide(
     val cats = remember(list, all, Library.favs.size, ChannelLists.lists.size) { guideCategories(list, all) }
     var catIdx by remember { mutableIntStateOf(0) }
     val shown = cats.getOrNull(catIdx)?.items ?: list
+    var showGroups by remember { mutableStateOf(false) }
     val catReq = remember { FocusRequester() }
     val idx = shown.indexOfFirst { it.id == curId }.coerceAtLeast(0)
     val ls = key(catIdx) { rememberLazyListState(maxOf(idx - 1, 0)) }
 
     // Preload program data: first the channels around the current one, 8 at a time
     LaunchedEffect(shown) {
+        if (standalone) return@LaunchedEffect // Visible rows already load their own programmes.
         val order = shown.indices.sortedBy { kotlin.math.abs(it - idx) }.map { shown[it] }
         for (chunk in order.take(80).chunked(8)) {
             // No preloading while Up/Down is held: network and parsing would compete with scrolling
@@ -190,6 +193,7 @@ fun Guide(
                 val r = rowReq
                 if (r == null || !runCatching { r.requestFocus() }.isSuccess) { if (!runCatching { catReq.requestFocus() }.isSuccess) onClose() }
             }
+            standalone -> onClose()
             !inCats -> if (!runCatching { catReq.requestFocus() }.isSuccess) onClose()
             else -> onClose()
         }
@@ -197,6 +201,12 @@ fun Guide(
     androidx.compose.runtime.DisposableEffect(Unit) {
         GuideBack.handler = { backStep() }
         onDispose { GuideBack.handler = null }
+    }
+    LaunchedEffect(standalone, catIdx) {
+        if (standalone) {
+            androidx.compose.runtime.withFrameNanos { }
+            runCatching { focus.requestFocus() }
+        }
     }
     LaunchedEffect(GuidePrefs.zoom) { infoE?.let { shiftFor(it) } }
 
@@ -210,6 +220,7 @@ fun Guide(
     Column(
         Modifier.fillMaxSize()
             .drawBehind {
+                if (standalone) { drawRect(Color(0xFF090B12)); return@drawBehind }
                 val l = size.width - 424.dp.toPx(); val t = 20.dp.toPx()
                 val hole = androidx.compose.ui.geometry.RoundRect(l, t, l + 400.dp.toPx(), t + 225.dp.toPx(), androidx.compose.ui.geometry.CornerRadius(DS.RadiusM.toPx()))
                 val path = androidx.compose.ui.graphics.Path().apply {
@@ -221,7 +232,7 @@ fun Guide(
             }
             .padding(start = 24.dp, top = 14.dp, bottom = 10.dp, end = 24.dp)
     ) {
-        Row(Modifier.fillMaxWidth().height(238.dp)) {
+        Row(Modifier.fillMaxWidth().height(if (standalone) 186.dp else 238.dp)) {
             Column(Modifier.weight(1f).fillMaxHeight().padding(end = 20.dp)) {
                 // Header: title, date and time, Now and View
                 Row(Modifier.fillMaxWidth().height(58.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -238,6 +249,12 @@ fun Guide(
                         Text(raw = true, text = dayLabel(nowSec), color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                         Box(Modifier.width(1.dp).height(14.dp).background(Color(0x44FFFFFF)))
                         Text(raw = true, text = hhmm(nowSec), color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, style = TNUM)
+                    }
+                    if (standalone) Box {
+                        SmallPill("Kategorien", icon = AIcon.Lists) { showGroups = true }
+                        if (showGroups) OptionPopup(cats.map { it.name }, catIdx, { showGroups = false }) {
+                            catIdx = it; showGroups = false
+                        }
                     }
                     SmallPill("Suche", icon = AIcon.Edit) { showSearch = true }
                     SmallPill("Jetzt", icon = AIcon.Dot) { jumpNow() }
@@ -274,13 +291,13 @@ fun Guide(
                         }
                     }
                 }
-                GuideDetailPanel(infoE, infoItem, nowSec, Modifier.weight(1f).fillMaxWidth().padding(top = 4.dp))
+                GuideDetailPanel(infoE, infoItem, nowSec, Modifier.weight(1f).fillMaxWidth().padding(top = 4.dp), standalone)
             }
-            Spacer(Modifier.width(400.dp))
+            if (!standalone) Spacer(Modifier.width(400.dp))
         }
         Row(Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp)) {
-            // Categories
-            LazyColumn(
+            // The standalone grid exposes category selection in its header.
+            if (!standalone) LazyColumn(
                 Modifier.width(206.dp).fillMaxHeight().clip(RoundedCornerShape(DS.RadiusL)).background(Color(0x0FFFFFFF)),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(8.dp),
                 verticalArrangement = Arrangement.spacedBy(3.dp)
@@ -290,7 +307,7 @@ fun Guide(
                         onFocus = { inCats = true; inBlock = false; if (catIdx != ci) catIdx = ci }, onLeft = onClose) { runCatching { focus.requestFocus() } }
                 }
             }
-            Spacer(Modifier.width(12.dp))
+            if (!standalone) Spacer(Modifier.width(12.dp))
             BoxWithConstraints(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(DS.RadiusL)).background(Color(0x0AFFFFFF)).padding(horizontal = 8.dp, vertical = 6.dp)) {
                 val vm = ((maxWidth - 208.dp).value / dpm).toInt().coerceAtLeast(40)
                 SideEffect { if (viewMin != vm) viewMin = vm }
@@ -340,7 +357,7 @@ fun Guide(
                                 onRowFocus = { e -> rowFocus.value = e to ch; jumpScope.launch { holdJump(ls, i) } },
                                 onBlock = { inB, r -> inBlock = inB; inCats = false; rowReq = r; if (inB) rowFocus.value = null },
                                 // Left from the channel column: to the categories (before: close)
-                                onClose = { if (!runCatching { catReq.requestFocus() }.isSuccess) onClose() },
+                                onClose = { if (standalone || !runCatching { catReq.requestFocus() }.getOrDefault(false)) onClose() },
                                 onArchive = { e -> onArchive(ch, e) },
                                 onPick = { val p = onPickIn; if (p != null) p(ch, shown) else onPick(ch) }
                             )
@@ -431,7 +448,7 @@ private fun GuideHint(key: String?, text: String, vararg keys: AIcon) {
  * what OK does (watch / from the archive / remind) and the next shows of the channel.
  */
 @Composable
-private fun GuideDetailPanel(e: EpgEntry?, ch: Item?, nowSec: Long, modifier: Modifier) {
+private fun GuideDetailPanel(e: EpgEntry?, ch: Item?, nowSec: Long, modifier: Modifier, standalone: Boolean) {
     val shape = RoundedCornerShape(DS.RadiusL)
     Row(
         modifier.clip(shape).background(Color(0x0FFFFFFF)).border(1.dp, Color(0x14FFFFFF), shape).padding(horizontal = 18.dp, vertical = 12.dp),
@@ -441,7 +458,7 @@ private fun GuideDetailPanel(e: EpgEntry?, ch: Item?, nowSec: Long, modifier: Mo
             if (e == null || ch == null) {
                 Text("TV-Guide", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
                 Text("Wähle eine Sendung mit den Pfeiltasten, OK schaltet auf den Sender.", color = PT.T2, fontSize = 14.sp)
-                Text("Zurück: zum Sender, dann zur Kategorie, dann schließen.", color = Muted, fontSize = 13.sp)
+                if (!standalone) Text("Zurück: zum Sender, dann zur Kategorie, dann schließen.", color = Muted, fontSize = 13.sp)
                 return@Column
             }
             val isNow = nowSec >= e.start && nowSec < e.end
@@ -504,7 +521,7 @@ private fun GuideRow(
     // null = still loading (shows "loading …" instead of wrongly "No program available")
     // Cached program right away; otherwise wait briefly and not while Up/Down is held (rows that only fly past load nothing)
     // While Up/Down is held even cached rows stay empty: a row with its program builds a dozen focusable fields
-    val raw by produceState<List<EpgEntry>?>(if (LiveHold.active()) null else EpgFull.peek(ch), ch.id) {
+    val raw by produceState<List<EpgEntry>?>(if (LiveHold.active()) null else EpgFull.peek(ch), ch.id, Xmltv.revision) {
         value = if (LiveHold.active()) null else EpgFull.peek(ch)
         if (value != null) return@produceState
         delay(150)

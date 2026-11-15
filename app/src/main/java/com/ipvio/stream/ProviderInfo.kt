@@ -4,6 +4,8 @@ import android.content.Context
 import android.util.JsonReader
 import android.util.JsonToken
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import org.json.JSONObject
@@ -15,6 +17,7 @@ import java.io.File
  */
 object ProviderInfo {
     private val client = Net.base
+    private val catalogueRefresh = Mutex()
     private const val DAY = 24L * 3600 * 1000
 
     private fun get(url: String): okhttp3.Response? = try {
@@ -54,21 +57,28 @@ object ProviderInfo {
             if (v is String || v is Number) f[k] = v.toString()
         }
         val back = info.optJSONArray("backdrop_path")?.let { a -> (0 until a.length()).map { a.optString(it) }.firstOrNull { it.startsWith("http") } }
-        val r = ProviderLogic.infoOf(f, back, listOf("movie_image", "cover_big", "cover"))
-        return if (r.isEmpty()) null else toMeta(r, false, i.year)
+        val r = ProviderLogic.infoOf(f, back, listOf("cover_big", "movie_image", "cover"))
+        val imdb = MovieImdb.validId(f["imdb_id"]) ?: MovieImdb.validId(f["imdb"])
+        val original = ProviderLogic.clean(f["original_title"]) ?: ProviderLogic.clean(f["o_name"])
+        return if (r.isEmpty() && imdb == null && original == null) null else toMeta(r, false, i.year).copy(imdbId = imdb, originalTitle = original)
     }
 
-    private fun series(ctx: Context, i: Item): Meta? {
+    private suspend fun series(ctx: Context, i: Item): Meta? {
         val acct = ProviderLogic.seriesAcct(i) ?: return null
         val file = File(ctx.cacheDir, "prov_series_" + (acct.host + acct.user).hashCode() + ".json")
-        if (!file.exists() || System.currentTimeMillis() - file.lastModified() > DAY) {
-            val tmp = File(file.path + ".tmp")
-            val ok = get(ProviderLogic.apiUrl(acct, "get_series"))?.use { r ->
-                val b = r.body
-                if (!r.isSuccessful || b == null) false
-                else { tmp.outputStream().use { o -> b.byteStream().copyTo(o) }; true }
-            } ?: false
-            if (ok) { file.delete(); tmp.renameTo(file) } else { tmp.delete(); if (!file.exists()) return null }
+        catalogueRefresh.withLock {
+            if (!file.exists() || System.currentTimeMillis() - file.lastModified() > DAY) {
+                val tmp = File(file.path + ".tmp")
+                try {
+                    get(ProviderLogic.apiUrl(acct, "get_series"))?.use { r ->
+                        if (r.isSuccessful) r.body?.let { b ->
+                            tmp.outputStream().use { o -> b.byteStream().copyTo(o) }
+                            tmp.renameTo(file)
+                        }
+                    }
+                } finally { tmp.delete() }
+                if (!file.exists()) return null
+            }
         }
         val info = findSeries(file, i.title) ?: return null
         return if (info.isEmpty()) null else toMeta(info, true, i.year)
@@ -100,7 +110,7 @@ object ProviderInfo {
                     }
                 }
                 r.endObject()
-                if (ProviderLogic.sameName(title, f["name"])) return ProviderLogic.infoOf(f, back, listOf("cover", "cover_big"))
+                if (ProviderLogic.sameName(title, f["name"])) return ProviderLogic.infoOf(f, back, listOf("cover_big", "cover"))
             }
         }
         return null

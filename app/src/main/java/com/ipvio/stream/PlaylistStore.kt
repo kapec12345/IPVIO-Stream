@@ -511,10 +511,15 @@ object PlaylistStore {
     ) {
         try {
             val f = cacheFile(c, url)
+            if (f.exists()) {
+                val previous = try {
+                    BufferedInputStream(FileInputStream(f), 1 shl 16).use { PlaylistCacheIO.previousDates(it, url) }
+                } catch (_: java.io.IOException) { null }
+                if (previous != null) VodRecency.carryDates(list, previous.second, previous.first == hidden || previous.first == null, System.currentTimeMillis() / 1000)
+            }
             val t = tmp(f)
             BufferedOutputStream(FileOutputStream(t), 1 shl 16).use { PlaylistCacheIO.write(it, url, list, epg, order, counts, bytes, hidden) }
-            f.delete()
-            t.renameTo(f)
+            android.system.Os.rename(t.absolutePath, f.absolutePath)
         } catch (e: Exception) {
         }
     }
@@ -549,7 +554,7 @@ object PlaylistStore {
 
     private fun sig(l: List<Item>): Long {
         var s = l.size.toLong()
-        for (i in l) s = s * 31 + i.id.hashCode()
+        for (i in l) s = (s * 31 + i.id.hashCode()) * 31 + i.addedAt
         return s
     }
 

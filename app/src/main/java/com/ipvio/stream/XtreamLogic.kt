@@ -94,16 +94,21 @@ object XtreamLogic {
         val sb = StringBuilder(160).append("#EXTINF:-1")
         attr(f["stream_icon"]).takeIf { it.startsWith("http") }?.let { sb.append(" tvg-logo=\"").append(it).append('"') }
         sb.append(" group-title=\"").append(attr(group(f, cats))).append('"')
+        addTimestamp(sb, VodRecency.timestamp(f["added"]))
         return sb.append(',').append(n).append('\n').append(movieUrl(a, id, f["container_extension"])).toString()
     }
 
+    private fun addTimestamp(sb: StringBuilder, seconds: Long) {
+        if (seconds > 0) sb.append(" added=\"").append(seconds).append('"')
+    }
+
     /** A series from get_series (only what is needed for the episode list). */
-    data class Series(val id: String, val name: String, val cover: String?, val group: String)
+    data class Series(val id: String, val name: String, val cover: String?, val group: String, val addedAt: Long = 0)
 
     fun seriesOf(f: Map<String, String>, cats: Map<String, String>): Series? {
         val id = idOf(f, "series_id") ?: return null
         val n = name(f["name"]).ifEmpty { return null }
-        return Series(id, n, attr(f["cover"]).takeIf { it.startsWith("http") }, group(f, cats))
+        return Series(id, n, attr(f["cover"]).takeIf { it.startsWith("http") }, group(f, cats), VodRecency.timestamp(f["added"]))
     }
 
     /** Ending of the placeholder address of a series whose episodes are only loaded on opening. */
@@ -116,6 +121,7 @@ object XtreamLogic {
      */
     fun lazyEntry(a: Acct, s: Series): String {
         val sb = StringBuilder(160).append("#EXTINF:-1")
+        addTimestamp(sb, s.addedAt)
         s.cover?.let { sb.append(" tvg-logo=\"").append(it).append('"') }
         sb.append(" group-title=\"").append(attr(s.group)).append('"')
         sb.append(',').append(s.name).append(" S01E01")
@@ -162,6 +168,7 @@ object XtreamLogic {
         val num = f["episode_num"]?.trim()?.toIntOrNull() ?: return null
         if (season !in 0..99 || num !in 0..9999) return null
         val sb = StringBuilder(160).append("#EXTINF:-1")
+        addTimestamp(sb, s.addedAt)
         s.cover?.let { sb.append(" tvg-logo=\"").append(it).append('"') }
         sb.append(" group-title=\"").append(attr(s.group)).append('"')
         sb.append(',').append(s.name).append(" S").append(season.toString().padStart(2, '0'))

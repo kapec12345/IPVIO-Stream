@@ -314,7 +314,7 @@ private fun SearchRowHeader(title: String, count: Int, headerReq: FocusRequester
         Spacer(Modifier.width(16.dp))
         Box(Modifier.width(4.dp).height(22.dp).clip(RoundedCornerShape(2.dp)).background(Accent1))
         Spacer(Modifier.width(10.dp))
-        Text(title, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text(title, color = Color.White, fontSize = if (Look.vod) 25.sp else 22.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -495,7 +495,7 @@ private fun SearchInfoPanel(item: Item?, modifier: Modifier) {
             delay(200)
             value = MetaRepo.basic(ctx, item) ?: MetaRepo.cached(item)
         }
-        val epg by produceState(emptyList<EpgEntry>(), item.id) {
+        val epg by produceState(emptyList<EpgEntry>(), item.id, Xmltv.revision) {
             value = emptyList()
             if (item.kind != Kind.LIVE) return@produceState
             delay(200)
@@ -506,18 +506,21 @@ private fun SearchInfoPanel(item: Item?, modifier: Modifier) {
         Row(Modifier.fillMaxSize().padding(14.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             val img = m?.poster ?: item.logo
             Box(Modifier.fillMaxHeight().aspectRatio(if (item.kind == Kind.LIVE) 1f else 2f / 3f).clip(RoundedCornerShape(DS.RadiusS)).background(DS.Overlay2)) {
-                if (img != null) coil.compose.AsyncImage(img, null, Modifier.fillMaxSize(), contentScale = if (item.kind == Kind.LIVE) androidx.compose.ui.layout.ContentScale.Fit else androidx.compose.ui.layout.ContentScale.Crop)
+                if (Look.vod && item.kind != Kind.LIVE) KinoPoster(item, m?.poster, Modifier.fillMaxSize())
+                else if (img != null) coil.compose.AsyncImage(img, null, Modifier.fillMaxSize(), contentScale = if (item.kind == Kind.LIVE) androidx.compose.ui.layout.ContentScale.Fit else androidx.compose.ui.layout.ContentScale.Crop)
             }
             Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(raw = true, text = item.title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 val parts = ArrayList<String>()
-                parts.add(when (item.kind) { Kind.MOVIE -> "Film"; Kind.SERIES -> "Serie"; else -> "Live" })
+                parts.add(Lang.tr(kindLabel(item.kind)))
                 (item.year?.toString() ?: m?.year)?.let { parts.add(it) }
                 m?.runtime?.takeIf { it > 0 }?.let { parts.add("$it Min") }
                 (item.quality)?.let { parts.add(it) }
                 m?.genres?.take(3)?.let { parts.addAll(it) }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    m?.score()?.let { sc ->
+                    if (Look.vod && item.kind != Kind.LIVE) {
+                        FilmwebRatingLabel(item, m?.year?.toIntOrNull(), true, false, compact = true)
+                    } else m?.score()?.let { sc ->
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                             AppIcon(AIcon.Star, DS.Gold, size = 16.dp)
                             Text(raw = true, text = String.format(java.util.Locale.US, "%.1f", sc), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)

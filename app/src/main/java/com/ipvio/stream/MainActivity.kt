@@ -295,6 +295,13 @@ private fun AppContent() {
         playing = PlayReq(title, playUrl, item.id, item.kind == Kind.LIVE, startMs, tmdb, season, ep, alts, note)
     }
 
+    fun resumeHistoryEpisode(entry: Entry, item: Item) {
+        if (browse == null) LastFocus.pending = LastFocus.seriesPoster(item.id)
+        NewEpisodes.dismiss(ctx, item.id)
+        val (title, url) = WatchStore.target(ctx, item, entry)
+        start(item, title, url, entry.pos)
+    }
+
     /** EPG (sidebar/tile): start the last watched channel (otherwise the first) and show the TV guide right away. */
     fun openEpg() {
         val ch = History.ids.firstNotNullOfOrNull { id -> liveAll.firstOrNull { it.id == id } } ?: liveAll.firstOrNull() ?: return
@@ -443,7 +450,7 @@ private fun AppContent() {
                 )
             } }
             b != null -> Box(Modifier.fillMaxSize().screenEnter()) { BrowseScreen(
-                b, gridState, tab, onOpen = open,
+                b, gridState, tab, onOpen = open, onHistoryEpisode = ::resumeHistoryEpisode,
                 onBack = { browse = null },
                 onGoTab = { if (it != MenuLogic.EPG) { browse = null; cats = null }; goTab(it) },
                 // Started from the cinema view: put the title's detail page underneath so "Back" lands there (not in the cinema view again)
@@ -483,8 +490,14 @@ private fun AppContent() {
                 onTab = { goTab(it) }
             ) }
             else -> Box(Modifier.fillMaxSize().screenEnter(tab)) { HomeScreen(
-                tab = tab, onTab = { goTab(it) }, states = states,
+                tab = tab, onTab = { goTab(it) }, states = states, onHistoryEpisode = ::resumeHistoryEpisode,
                 onOpen = open,
+                onArchive = { ch, entry ->
+                    Catchup.urlFor(ch, entry)?.takeUnless { DemoMode.active }?.let { url ->
+                        LastFocus.pending = ch.id
+                        playing = PlayReq(entry.title, url, ch.id, false, 0L, archive = ArchiveRef(ch.id, ch.title, entry))
+                    }
+                },
                 onPlayNow = { i -> LastFocus.pending = i.id; if (i.kind == Kind.SERIES) pushTop(i) else { if (i.kind != Kind.LIVE && !i.id.startsWith("rec:")) pushTop(i); start(i, i.title, i.url) } },
                 onResume = { e, i ->
                     LastFocus.pending = i.id
