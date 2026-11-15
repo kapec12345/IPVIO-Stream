@@ -4,6 +4,10 @@ package com.ipvio.stream
 // New texts come in English first (maintainer request); languages left empty show English.
 // Format: de ¦ en ¦ tr ¦ bs ¦ hr ¦ sr ¦ es ¦ fr ¦ it   (hr/sr empty = same as bs; others empty = same as en)
 val DictO = """
+Ablaufdatum des IPTV-Kontos¦IPTV account expiry
+Gültigkeitsdatum nicht angegeben¦No expiry date provided
+Gültigkeitsdatum nicht verfügbar¦Expiry date unavailable
+Gültigkeitsdatum wird geladen¦Checking expiry date
 # Ready-made designs and background names (Look.kt)
 Nachteule¦Night owl¦Gece kuşu¦Noćna sova¦¦¦Búho nocturno¦Oiseau de nuit¦Nottambulo
 Vampir¦Vampire¦Vampir¦Vampir¦¦¦Vampiro¦Vampire¦Vampiro

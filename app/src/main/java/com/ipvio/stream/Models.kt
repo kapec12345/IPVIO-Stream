@@ -191,6 +191,15 @@ object M3uParser {
     private val BRACKETS = Regex("""[\(\[][^\)\]]*[\)\]]""")
     private val TAGS = Regex("""\b(4K|UHD|FHD|HD|HEVC|H265|1080p|720p|MULTI|GERMAN|DUAL)\b""", RegexOption.IGNORE_CASE)
     private val SPACES = Regex("""\s{2,}""")
+    // Root live routes include Stalker and HLS. Mounted Xtream routes end in user/password/stream ID.
+    private val LIVE_PATH = Regex(
+        """^(?:https?|stalker)://[^/?#]+/(?:live/|(?:[^/?#]+/)+live/[^/?#]+/[^/?#]+/\d+(?:\.[a-z0-9]+)?(?:[?#]|$))""",
+        RegexOption.IGNORE_CASE
+    )
+
+    internal fun isLiveStream(url: String): Boolean =
+        url.contains("/live/", ignoreCase = true) && LIVE_PATH.containsMatchIn(url)
+
     private val VOD_GROUP = Regex("""film|movie|vod|kino|cinema""", RegexOption.IGNORE_CASE)
     /**
      * Address ends in .mp4, .mkv or .avi (case does not matter), optionally followed by a query ("?…").
@@ -358,12 +367,14 @@ object M3uParser {
     /** Kind and language of an entry; counts it in [st]. null = separator, skipped. */
     private fun classify(e: Entry, st: Stats, langOf: LangOf): Kinded? {
         if (isSeparator(e.name)) return null
-        val m = if (mayBeEpisode(e.name)) SE.find(e.name) else null
-        val isSeriesUrl = e.url.contains("/series/")
-        val isMovie = e.url.contains("/movie/") || isVideoFile(e.url) || langOf.vod(e.group)
-        // Stalker channels are always live, even in groups like "ENGLISH | PREMIUM MOVIES" (movie channels)
-        val stalkerLive = e.url.startsWith("stalker://") && e.url.contains("/live/")
-        val kind = if (stalkerLive) Kind.LIVE else if (m != null || isSeriesUrl) Kind.SERIES else if (isMovie) Kind.MOVIE else Kind.LIVE
+        val live = isLiveStream(e.url)
+        val m = if (!live && mayBeEpisode(e.name)) SE.find(e.name) else null
+        val kind = when {
+            live -> Kind.LIVE
+            m != null || e.url.contains("/series/") -> Kind.SERIES
+            e.url.contains("/movie/") || isVideoFile(e.url) || langOf.vod(e.group) -> Kind.MOVIE
+            else -> Kind.LIVE
+        }
         val lang = langOf.of(e.group, e.name, kind == Kind.LIVE)
         val countKey = if (kind == Kind.SERIES) (m?.groupValues?.get(1) ?: e.name).trim().lowercase() else null
         st.add(lang, e.info.length + e.url.length + 2, countKey)

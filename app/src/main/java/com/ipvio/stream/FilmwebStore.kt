@@ -35,7 +35,8 @@ internal class FilmwebStore private constructor(ctx: Context) {
         db.rawQuery("SELECT k,payload,expires FROM ratings", null).use { c ->
             while (c.moveToNext()) {
                 val raw = JSONObject(c.getString(1))
-                entries[c.getString(0)] = Entry(decode(raw), c.getLong(2))
+                val result = decode(raw) ?: continue
+                entries[c.getString(0)] = Entry(result, c.getLong(2))
             }
         }
         db.rawQuery("SELECT item,year FROM years", null).use { c ->
@@ -64,6 +65,7 @@ internal class FilmwebStore private constructor(ctx: Context) {
 
     @Synchronized fun put(i: Item, year: Int?, raw: JSONObject, result: FilmwebResult) {
         val k = key(i, year)
+        if (result == FilmwebResult.Missing) raw.put("matchVersion", MATCH_VERSION)
         insert(db, k, raw)
         val old = entries.put(k, Entry(result, expires(raw)))
         if (result != old?.result && (result is FilmwebResult.Rating || result is FilmwebResult.Unrated || old != null)) revision.value++
@@ -80,7 +82,13 @@ internal class FilmwebStore private constructor(ctx: Context) {
         private fun insert(db: SQLiteDatabase, key: String, entry: JSONObject) {
             db.execSQL("INSERT OR REPLACE INTO ratings VALUES(?,?,?)", arrayOf<Any>(key, entry.toString(), expires(entry)))
         }
-        private fun decode(raw: JSONObject) = Filmweb.rating(raw, raw.optInt("id"), raw.optInt("year").takeIf { it > 0 })
+        private const val MATCH_VERSION = 2
+
+        internal fun decode(raw: JSONObject): FilmwebResult? {
+            val result = Filmweb.rating(raw, raw.optInt("id"), raw.optInt("year").takeIf { it > 0 })
+            // A miss cached by the strict-year matcher must not hide a newly valid title.
+            return result.takeUnless { it == FilmwebResult.Missing && raw.optInt("matchVersion") < MATCH_VERSION }
+        }
     }
 }
 

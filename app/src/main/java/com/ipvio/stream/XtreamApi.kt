@@ -44,6 +44,13 @@ class XtreamApi(private val client: OkHttpClient, private val ua: String) {
         if (ok == false) throw PlaylistError("Zugang abgelehnt. Benutzername, Passwort oder Abo prüfen.")
     }
 
+    fun accountExpiryMillis(a: XtreamLogic.Acct): Long? {
+        val info = JSONObject(text(XtreamLogic.api(a))).optJSONObject("user_info")
+            ?: throw java.io.IOException("Account information unavailable")
+        if (info.optString("auth") == "0") throw java.io.IOException("Account information unavailable")
+        return XtreamLogic.expiryMillis(info.optString("exp_date"))
+    }
+
     private fun categories(a: XtreamLogic.Acct, action: String): Map<String, String> {
         val out = HashMap<String, String>()
         val arr = runCatching { JSONArray(text(XtreamLogic.api(a, action))) }.getOrNull() ?: return out
@@ -57,7 +64,7 @@ class XtreamApi(private val client: OkHttpClient, private val ua: String) {
     }
 
     /** Reads a flat JSON object (texts and numbers; for lists only the first value, e.g. "category_ids"). */
-    private fun flat(r: JsonReader): Map<String, String> {
+    private fun flat(r: JsonReader, readRuntime: Boolean = false): Map<String, String> {
         val f = HashMap<String, String>(24)
         r.beginObject()
         while (r.hasNext()) {
@@ -65,6 +72,11 @@ class XtreamApi(private val client: OkHttpClient, private val ua: String) {
             when (r.peek()) {
                 JsonToken.STRING, JsonToken.NUMBER -> f[n] = r.nextString()
                 JsonToken.BOOLEAN -> f[n] = r.nextBoolean().toString()
+                JsonToken.BEGIN_OBJECT -> if (readRuntime && n == "info") {
+                    val info = flat(r)
+                    ProviderLogic.minutes(info["duration_secs"], info["duration"], info["episode_run_time"], info["runtime"])
+                        ?.let { f["episodeMinutes"] = it.toString() }
+                } else r.skipValue()
                 JsonToken.BEGIN_ARRAY -> {
                     r.beginArray()
                     var first: String? = null
@@ -106,7 +118,7 @@ class XtreamApi(private val client: OkHttpClient, private val ua: String) {
      * Goes through the episodes of a series and reports each to [sink] (episode as flat fields, season from the key).
      * "episodes" is, depending on the provider, an object (season → list) or a list. false = error (after a second attempt).
      */
-    private fun walkEpisodes(a: XtreamLogic.Acct, seriesId: String, sink: (Map<String, String>, Int?) -> Unit, reset: () -> Unit): Boolean {
+    private fun walkEpisodes(a: XtreamLogic.Acct, seriesId: String, sink: (Map<String, String>, Int?) -> Unit, reset: () -> Unit, readRuntime: Boolean = false): Boolean {
         for (attempt in 0 until 2) {
             try {
                 var ok = true
@@ -124,11 +136,11 @@ class XtreamApi(private val client: OkHttpClient, private val ua: String) {
                                     jr.beginObject()
                                     while (jr.hasNext()) {
                                         val season = jr.nextName().trim().toIntOrNull()
-                                        epList(jr, season, sink)
+                                        epList(jr, season, sink, readRuntime)
                                     }
                                     jr.endObject()
                                 }
-                                JsonToken.BEGIN_ARRAY -> epList(jr, null, sink)
+                                JsonToken.BEGIN_ARRAY -> epList(jr, null, sink, readRuntime)
                                 else -> jr.skipValue()
                             }
                         }
@@ -146,18 +158,29 @@ class XtreamApi(private val client: OkHttpClient, private val ua: String) {
         return false
     }
 
-    private fun epList(jr: JsonReader, season: Int?, sink: (Map<String, String>, Int?) -> Unit) {
+    private fun epList(jr: JsonReader, season: Int?, sink: (Map<String, String>, Int?) -> Unit, readRuntime: Boolean) {
         if (jr.peek() != JsonToken.BEGIN_ARRAY) { jr.skipValue(); return }
         jr.beginArray()
         while (jr.hasNext()) {
             when (jr.peek()) {
-                JsonToken.BEGIN_OBJECT -> sink(flat(jr), season)
+                JsonToken.BEGIN_OBJECT -> sink(flat(jr, readRuntime), season)
                 // Some providers nest one level deeper
-                JsonToken.BEGIN_ARRAY -> epList(jr, season, sink)
+                JsonToken.BEGIN_ARRAY -> epList(jr, season, sink, readRuntime)
                 else -> jr.skipValue()
             }
         }
         jr.endArray()
+    }
+
+    fun episodeRuntimes(a: XtreamLogic.Acct, seriesId: String, sourcePrefix: String): Map<String, Int> {
+        val times = HashMap<String, Int>()
+        val ok = walkEpisodes(a, seriesId, { fields, _ ->
+            val id = fields["id"]
+            val minutes = fields["episodeMinutes"]?.toIntOrNull()
+                ?: ProviderLogic.minutes(fields["duration_secs"], fields["duration"], fields["episode_run_time"], fields["runtime"])
+            if (id != null && minutes != null) times[sourcePrefix + id] = minutes
+        }, times::clear, readRuntime = true)
+        return if (ok) times else emptyMap()
     }
 
     /** Episodes of a series as finished lines; empty on error. */

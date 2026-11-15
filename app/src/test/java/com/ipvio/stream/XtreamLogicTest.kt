@@ -8,6 +8,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class XtreamLogicTest {
+    @Test fun accountExpiryAcceptsUnixSecondsOrMillisecondsAndSkipsMissingDates() {
+        assertEquals(1_825_718_400_000L, XtreamLogic.expiryMillis("1825718400"))
+        assertEquals(1_825_718_400_000L, XtreamLogic.expiryMillis("1825718400000"))
+        listOf(null, "", "null", "0", "-1", "unlimited", Long.MAX_VALUE.toString()).forEach {
+            assertNull(XtreamLogic.expiryMillis(it))
+        }
+    }
+
     private val a = XtreamLogic.Acct("http://srv.tld:8080", "user", "pa ss&1")
 
     @Test fun parsesGetUrl() {

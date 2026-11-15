@@ -218,6 +218,8 @@ fun HomeScreen(
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
+    val expirySource = if (tab == 0 && !DemoMode.active) PlaylistStore.lists.getOrNull(PlaylistStore.active)?.url else null
+    val footerHeight = if (expirySource != null) dpx(54) else 0.dp
     val allRaw = PlaylistStore.channels
     // Movies/series: playlist selection at the top (with several shown playlists) – only titles of this playlist
     val areaK = if (tab in 1..2) AreaSource.get(tab) else -1
@@ -642,7 +644,7 @@ fun HomeScreen(
                 else -> CompositionLocalProvider(
                     LocalCardGrid provides grid, LocalScrollTop provides { states[tab].scrollToItem(0) },
                     androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides (if (bbTab) pivotSpec else SmoothSpec)
-                ) { LazyColumn(Modifier.fillMaxSize().onGloballyPositioned { listTop[0] = it.positionInRoot().y }.drawWithContent {
+                ) { LazyColumn(Modifier.fillMaxSize().padding(bottom = footerHeight).onGloballyPositioned { listTop[0] = it.positionInRoot().y }.drawWithContent {
                     // While the info is at the top (also while fading out): everything above the selected row is gone, the big picture always.
                     val ct = if (bbTab && bbA() > 0.01f) {
                         val li = states[tab].layoutInfo
@@ -851,6 +853,9 @@ fun HomeScreen(
                         }
                     }
                 } }
+            }
+            if (expirySource != null) key(expirySource) {
+                AccountExpiryFooter(expirySource, Modifier.align(Alignment.BottomStart).fillMaxWidth().height(footerHeight))
             }
             // Design settings: the preview stays fixed at the top right, the settings scroll away below
             if (DesignPreview.visible) DesignPreviewPanel(Modifier.align(Alignment.TopEnd).padding(top = dpx(84), end = DS.PageX))

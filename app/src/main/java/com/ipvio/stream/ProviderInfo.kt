@@ -65,6 +65,20 @@ object ProviderInfo {
 
     private suspend fun series(ctx: Context, i: Item): Meta? {
         val acct = ProviderLogic.seriesAcct(i) ?: return null
+        val info = seriesEntry(ctx, acct, i.title)?.info ?: return null
+        return if (info.isEmpty()) null else toMeta(info, true, i.year)
+    }
+
+    suspend fun episodeRuntimes(ctx: Context, item: Item): Map<String, Int> = withContext(Dispatchers.IO) {
+        val acct = ProviderLogic.seriesAcct(item) ?: return@withContext emptyMap()
+        val id = seriesEntry(ctx, acct, item.title)?.id ?: return@withContext emptyMap()
+        val apiAccount = XtreamLogic.Acct(acct.host, android.net.Uri.decode(acct.user), android.net.Uri.decode(acct.pass))
+        PlaylistStore.xtreamApi().episodeRuntimes(apiAccount, id, "${acct.host}/series/${acct.user}/${acct.pass}/")
+    }
+
+    private data class SeriesEntry(val id: String?, val info: ProviderLogic.Info)
+
+    private suspend fun seriesEntry(ctx: Context, acct: ProviderLogic.Acct, title: String): SeriesEntry? {
         val file = File(ctx.cacheDir, "prov_series_" + (acct.host + acct.user).hashCode() + ".json")
         catalogueRefresh.withLock {
             if (!file.exists() || System.currentTimeMillis() - file.lastModified() > DAY) {
@@ -80,12 +94,11 @@ object ProviderInfo {
                 if (!file.exists()) return null
             }
         }
-        val info = findSeries(file, i.title) ?: return null
-        return if (info.isEmpty()) null else toMeta(info, true, i.year)
+        return findSeries(file, title)
     }
 
     /** Reads the (large) series list entry by entry without loading it fully into memory. */
-    private fun findSeries(file: File, title: String): ProviderLogic.Info? {
+    private fun findSeries(file: File, title: String): SeriesEntry? {
         JsonReader(file.bufferedReader()).use { r ->
             r.beginArray()
             while (r.hasNext()) {
@@ -110,7 +123,10 @@ object ProviderInfo {
                     }
                 }
                 r.endObject()
-                if (ProviderLogic.sameName(title, f["name"])) return ProviderLogic.infoOf(f, back, listOf("cover_big", "cover"))
+                if (ProviderLogic.sameName(title, f["name"])) return SeriesEntry(
+                    f["series_id"]?.takeIf { it.isNotEmpty() && it.all(Char::isDigit) },
+                    ProviderLogic.infoOf(f, back, listOf("cover_big", "cover"))
+                )
             }
         }
         return null

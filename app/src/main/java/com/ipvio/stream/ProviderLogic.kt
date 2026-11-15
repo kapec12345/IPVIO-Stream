@@ -47,16 +47,31 @@ object ProviderLogic {
         return if (r5 != null && r5 > 0) (r5 * 2).coerceAtMost(10.0) else null
     }
 
-    /** Running time in minutes from seconds, "HH:MM:SS" or minutes. */
-    fun minutes(secs: String?, duration: String?, runMin: String?): Int? {
-        clean(secs)?.toDoubleOrNull()?.let { if (it > 0) return (it / 60).toInt().coerceAtLeast(1) }
-        clean(duration)?.let { d ->
-            val p = d.split(':').mapNotNull { it.trim().toIntOrNull() }
-            if (p.size == 3) { val m = p[0] * 60 + p[1]; if (m > 0) return m }
-            if (p.size == 2) { val m = p[0] * 60 + p[1]; if (m > 0) return m }
+    private val CLOCK = Regex("""(\d+):([0-5]\d)(?::([0-5]\d)(?:[.,]\d+)?)?""")
+
+    /** Some Xtream catalogs put minutes in duration_secs even when the formatted clock is correct. */
+    fun minutes(secs: String?, duration: String?, runMin: String?, runtime: String? = null): Int? {
+        val clock = clean(duration)?.let { CLOCK.matchEntire(it) }
+        if (clock != null) {
+            val hours = clock.groupValues[1].toIntOrNull()
+            if (hours != null && hours <= Int.MAX_VALUE / 60 - 1) {
+                val minutes = hours * 60 + clock.groupValues[2].toInt()
+                if (minutes > 0) return minutes
+                if ((clock.groupValues[3].toIntOrNull() ?: 0) > 0) return 1
+            }
         }
-        clean(runMin)?.toIntOrNull()?.let { if (it > 0) return it }
-        return null
+        val explicit = listOf(runtime, runMin, duration).firstNotNullOfOrNull { value ->
+            clean(value)?.toIntOrNull()?.takeIf { it > 0 }
+        }
+        val seconds = clean(secs)?.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0 }
+        if (seconds == null || (explicit != null && seconds == explicit.toDouble())) return explicit
+        return (seconds / 60).toInt().coerceAtLeast(1)
+    }
+
+    /** Includes the source account, so an episode ID from a different playlist cannot match. */
+    fun episodeResource(url: String): String? {
+        val g = SERIES.matchEntire(url)?.groupValues ?: return null
+        return "${g[1]}/series/${g[2]}/${g[3]}/${g[4]}"
     }
 
     fun genres(s: String?): List<String> =
@@ -67,6 +82,13 @@ object ProviderLogic {
         val t = clean(s) ?: return null
         if (YT_ID.matches(t)) return t
         return YT_URL.find(t)?.groupValues?.get(1)
+    }
+
+    fun trailerFor(title: String, key: String?): String? {
+        val id = youtubeId(key)
+        // Some catalogs attach the first series' trailer (Paris Has Fallen) to its sequel.
+        if (id == "6HZ_mInIfk4" && MatchLogic.sameTitle(title, "Apollo w ogniu", "Apollo Has Fallen")) return "DZCrJcIPKVs"
+        return id
     }
 
     fun year(s: String?): String? = clean(s)?.let { YEAR.find(it)?.value }
@@ -85,7 +107,7 @@ object ProviderLogic {
         val plot: String?, val cover: String?, val backdrop: String?, val rating: Double?,
         val genres: List<String>, val year: String?, val runtime: Int?, val trailer: String?
     ) {
-        fun isEmpty() = plot == null && cover == null && backdrop == null && rating == null && genres.isEmpty() && trailer == null
+        fun isEmpty() = plot == null && cover == null && backdrop == null && rating == null && genres.isEmpty() && trailer == null && runtime == null
     }
 
     /** Builds [Info] from the provider's text fields (keys as delivered by Xtream). */
@@ -100,7 +122,7 @@ object ProviderLogic {
             rating = ratingOf(f["rating"], f["rating_5based"]),
             genres = genres(f["genre"]),
             year = year(f["releasedate"]) ?: year(f["releaseDate"]) ?: year(f["release_date"]) ?: year(f["year"]),
-            runtime = minutes(f["duration_secs"], f["duration"], f["episode_run_time"]),
+            runtime = minutes(f["duration_secs"], f["duration"], f["episode_run_time"], f["runtime"]),
             trailer = youtubeId(f["youtube_trailer"])
         )
     }

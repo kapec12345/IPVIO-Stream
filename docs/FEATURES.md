@@ -44,6 +44,14 @@ Names from older notes without a match in the code: "add-on system" (no hit). "M
 
 ### Kino browsing
 
+The Home footer displays the expiry date and time reported by the active Xtream provider, in the app language and configured time zone. It remains visible while browsing shelves. An unavailable or unpublished date has a separate status.
+
+An explicit live stream route takes precedence over a movie-themed category or an episode pattern in a channel name. The original playlist supplies station names, guide IDs and catch-up settings when upgrading an existing catalog.
+
+Movie details use formatted provider durations when platforms disagree about units. Each episode can show its own running time. Kino uses larger verified artwork for the East of Eden series and Strife MMA 15. The Trailer button opens an available video in YouTube on Android TV. With no video ID it opens a title search.
+
+Filmweb ratings use an exact normalized title and media type. A single verified match can have a different release year from the provider. If several titles match, the provider year must identify exactly one of them.
+
 Movies and Series open with new catalog arrivals and separate recently watched shelves. In recently watched series, a poster with a saved checkpoint shows the episode and time. OK resumes playback directly. A saved next episode starts at the beginning. Titles without a checkpoint still open their details. Previously known titles retain their arrival order across refreshes. Live TV opens the programme grid directly, with a category selector, search and programme details. Selecting a channel starts live playback.
 
 Under Settings → Live TV & Guide, EPG.OVH can supplement the playlist guide for Polish or untagged channels. The app matches station names locally, including provider prefixes and quality suffixes. Provider programmes keep their time slots. The channel list, now/next panels and guide grid use the additional listings when available.

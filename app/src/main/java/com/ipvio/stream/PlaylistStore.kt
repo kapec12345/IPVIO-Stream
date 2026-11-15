@@ -535,7 +535,28 @@ object PlaylistStore {
         }
     }
 
-    private fun readCache(c: Context, url: String, hidden: Set<String>): PlaylistCacheIO.Cached? {
+    private fun readCache(c: Context, url: String, hidden: Set<String>, head: PlaylistCacheIO.Cached): PlaylistCacheIO.Cached? {
+        val source = gzFile(c, url)
+        if (head.version < 7 && source.isFile) {
+            // Restore the original channel labels, guide IDs and catch-up fields from the saved playlist.
+            // Keep the previous binary usable if the source can no longer be read.
+            try {
+                val parsed = readFile(source, true, Charsets.UTF_8, null) { reader ->
+                    M3uParser.parseStream(reader, hidden, guard(askable = false))
+                }
+                if (parsed.counts.isNotEmpty()) {
+                    writeCache(c, url, parsed.items, head.epg, head.order, parsed.counts, parsed.bytes, hidden)
+                    Catchup.saveParsed(c, url, parsed.catchup)
+                    return PlaylistCacheIO.Cached(parsed.items, head.epg, head.order, parsed.counts, parsed.bytes, hidden)
+                }
+            } catch (_: IOException) {
+                // Fall back to the previous snapshot.
+            } catch (_: ParseStop) {
+                // Reading the binary snapshot needs less memory than parsing the original playlist.
+            } catch (_: OutOfMemoryError) {
+                // Use the streaming cache reader on low-memory devices.
+            }
+        }
         val f = cacheFile(c, url)
         if (!f.exists()) return null
         return try {
@@ -554,7 +575,7 @@ object PlaylistStore {
 
     private fun sig(l: List<Item>): Long {
         var s = l.size.toLong()
-        for (i in l) s = (s * 31 + i.id.hashCode()) * 31 + i.addedAt
+        for (i in l) s = ((s * 31 + i.id.hashCode()) * 31 + i.kind.ordinal) * 31 + i.addedAt
         return s
     }
 
@@ -1044,7 +1065,7 @@ object PlaylistStore {
         if (!network) {
             val head = readHeader(c, u)
             if (head != null && (head.hidden == null || head.hidden == hidden)) {
-                readCache(c, u, hidden)?.let { if (it.items.isNotEmpty()) return Extra(it.items, it.epg, it.order) }
+                readCache(c, u, hidden, head)?.let { if (it.items.isNotEmpty()) return Extra(it.items, it.epg, it.order) }
             }
             val gz = gzFile(c, u)
             if (gz.exists()) {
@@ -1104,7 +1125,7 @@ object PlaylistStore {
             // Old version (whole list without language counts) with a very large file and no language selection: do not load everything into memory
             val legacyTooBig = head.hidden == null && (hidden - LangTagLogic.PSEUDO).isEmpty() && cacheFile(c, u).length() > budget()
             if (!legacyTooBig && (head.hidden == null || head.hidden == hidden)) {
-                val cached = readCache(c, u, hidden)
+                val cached = readCache(c, u, hidden, head)
                 if (cached != null && cached.counts.isNotEmpty()) {
                     show(c, u, cached.items, cached.epg, cached.order, cached.counts, cached.bytes, hidden)
                     return Local.OK

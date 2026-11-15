@@ -6,6 +6,10 @@ fun loadPolishTexts() {
 }
 
 internal val DictPl1 = """
+Ablaufdatum des IPTV-Kontos¦Ważność konta IPTV
+Gültigkeitsdatum nicht angegeben¦Dostawca nie podał daty
+Gültigkeitsdatum nicht verfügbar¦Nie udało się pobrać daty
+Gültigkeitsdatum wird geladen¦Sprawdzanie daty…
 Playlist hinzufügen¦Dodaj playlistę
 Dauert nur ein paar Sekunden.¦Zajmuje tylko kilka sekund.
 Aus Zwischenablage einfügen¦Wklej ze schowka

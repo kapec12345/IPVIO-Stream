@@ -39,13 +39,16 @@ internal object Filmweb {
 
     internal suspend fun match(ids: List<Int>, type: String, year: Int?, preview: suspend (Int) -> JSONObject?): Title? {
         if (ids.isEmpty() || ids.size > LIMIT || (year == null && ids.size != 1)) return null
-        val matches = ids.mapNotNull { id ->
-            val info = preview(id) ?: return@mapNotNull null
-            val release = info.optInt("year").takeIf { it in 1880..2199 }
-            if (info.optInt("id") == id && info.optString("entityName") == type && (year == null || release == year))
-                Title(id, release) else null
+        val titles = ids.map { id ->
+            val info = preview(id) ?: return null
+            if (info.optInt("id") != id || info.optString("entityName") != type) return null
+            Title(id, info.optInt("year").takeIf { it in 1880..2199 })
         }
-        return matches.singleOrNull()
+        // The search already matched the normalized title and media type. Use the provider
+        // year only to distinguish namesakes, never to veto the sole verified title.
+        if (titles.size == 1) return titles.single()
+        if (titles.any { it.year == null }) return null
+        return titles.singleOrNull { it.year == year }
     }
 
     internal fun rating(data: JSONObject?, id: Int, year: Int? = null): FilmwebResult {

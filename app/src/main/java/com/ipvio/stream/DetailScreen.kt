@@ -45,16 +45,28 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import java.net.URLEncoder
+import android.content.ActivityNotFoundException
 
 fun openTrailer(ctx: Context, key: String?, title: String) {
-    val uri = if (key != null) "https://www.youtube.com/watch?v=$key"
-    else "https://www.youtube.com/results?search_query=" + URLEncoder.encode("$title Trailer", "UTF-8")
-    try {
-        ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_USER_ACTION))
-    } catch (e: Exception) {
-        Toast.makeText(ctx, Lang.tr("Keine App zum Öffnen des Trailers gefunden"), Toast.LENGTH_LONG).show()
+    val videoId = ProviderLogic.trailerFor(title, key)
+    val term = if (Lang.code() == "pl") "zwiastun" else "trailer"
+    val web = if (videoId != null) Uri.parse("https://www.youtube.com/watch?v=$videoId")
+        else Uri.parse("https://www.youtube.com/results").buildUpon()
+            .appendQueryParameter("search_query", "${MatchLogic.searchTitle(title)} $term").build()
+    val targets = listOfNotNull(
+        Intent(Intent.ACTION_VIEW, web).setPackage("com.google.android.youtube.tv"),
+        videoId?.let { Intent(Intent.ACTION_VIEW, Uri.parse("vnd.youtube:$it")).setPackage("com.google.android.youtube.tv") },
+        Intent(Intent.ACTION_VIEW, web)
+    )
+    for (intent in targets) {
+        try {
+            ctx.startActivity(intent)
+            return
+        } catch (_: ActivityNotFoundException) {
+            // Try the next installed handler.
+        }
     }
+    Toast.makeText(ctx, Lang.tr("Keine App zum Öffnen des Trailers gefunden"), Toast.LENGTH_LONG).show()
 }
 
 fun openExternal(ctx: Context, url: String, title: String) {
@@ -146,6 +158,15 @@ private fun DetailScreenFull(
     }
     BackHandler(enabled = !embedded, onBack = onBack)
     var meta by remember(item.id) { mutableStateOf(MetaRepo.cached(item)) }
+    var trailerRequested by remember(item.id) { mutableStateOf(false) }
+    LaunchedEffect(item.id, trailerRequested) {
+        if (trailerRequested) {
+            val id = meta?.trailerKey ?: MetaRepo.extended(ctx, item)?.trailerKey
+                ?: MetaRepo.providerMeta(ctx, item)?.trailerKey
+            openTrailer(ctx, id, item.title)
+            trailerRequested = false
+        }
+    }
     var metaDone by remember(item.id) { mutableStateOf(!MetaRepo.usable(item) || item.kind == Kind.LIVE) }
     LaunchedEffect(item.id) {
         MetaRepo.extended(ctx, item)?.let { meta = it }
@@ -242,6 +263,18 @@ private fun DetailScreenFull(
             val res = MetaRepo.season(tmdbId, metaSeason, if (sameCount) imdbId else null)
             epCache = epCache + (metaSeason to res)
             epLoading = false
+        }
+    }
+    val providerTimes by produceState(emptyMap<String, Int>(), item, showActions) {
+        value = emptyMap()
+        if (showActions && item.kind == Kind.SERIES && ProviderLogic.supports(item)) {
+            try {
+                value = ProviderInfo.episodeRuntimes(ctx, item)
+            } catch (e: java.io.IOException) {
+                // A missing provider catalog does not prevent episode selection.
+            } catch (e: IllegalStateException) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+            }
         }
     }
     val epMetas = epCache[metaSeason] ?: emptyList()
@@ -530,7 +563,7 @@ private fun DetailScreenFull(
                                 // Round 14: movies and series as favorites (appear under "Favorites")
                                 val fav = Library.isFav(item.id)
                                 HeroButton(if (fav) "Favorit" else "Zu Favoriten", if (fav) AIcon.HeartFilled else AIcon.Heart, false, Modifier, bh) { Library.toggleFav(ctx, item.id) }
-                                HeroButton("Trailer", AIcon.Play, false, Modifier, bh) { openTrailer(ctx, meta?.trailerKey, item.title) }
+                                HeroButton("Trailer", AIcon.Play, false, Modifier, bh) { trailerRequested = true }
                                 HeroButton("Extern", AIcon.External, false, Modifier, bh) { playUrl?.let { openExternal(ctx, it, item.title) } }
                             }
                             // Watched by hand: movie, season, whole series (also reachable per episode: long OK / menu key on the row)
@@ -700,7 +733,8 @@ private fun DetailScreenFull(
                                 val em = metaOf(ep)
                                 val v = pick(ep)
                                 EpisodeRow(
-                                    ep, em, v, progress[ResumeLogic.key(ep.season, ep.num)],
+                                    ep, em, v, ProviderLogic.episodeResource(v.url)?.let { providerTimes[it] } ?: em?.runtime,
+                                    progress[ResumeLogic.key(ep.season, ep.num)],
                                     Modifier
                                         .focusRequester(epReq(i))
                                         .onPreviewKeyEvent { ev ->
@@ -743,7 +777,7 @@ private fun DetailScreenFull(
 }
 
 @Composable
-private fun EpisodeRow(ep: Episode, em: EpMeta?, v: Variant, prog: ResumeLogic.EpPos?, modifier: Modifier, onFocus: () -> Unit, onToggleSeen: () -> Unit, onClick: () -> Unit) {
+private fun EpisodeRow(ep: Episode, em: EpMeta?, v: Variant, runtime: Int?, prog: ResumeLogic.EpPos?, modifier: Modifier, onFocus: () -> Unit, onToggleSeen: () -> Unit, onClick: () -> Unit) {
     var f by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(dpx(16))
     // A bright border makes the selected episode visible over either stills or a plain background.
@@ -784,7 +818,7 @@ private fun EpisodeRow(ep: Episode, em: EpMeta?, v: Variant, prog: ResumeLogic.E
                 v.quality?.let { QualityBadge(it) }
                 em?.imdb?.let { Badge("IMDb $it", Color(0xFFF5C518), Color.Black) }
                 if (!Look.vod && em?.imdb == null) em?.rating?.let { RatingBadge(it, Color(0x26FFFFFF)) }
-                em?.runtime?.let { Badge("$it Min") }
+                runtime?.takeIf { it > 0 }?.let { Badge("$it Min") }
             }
             em?.air?.let { Text(raw = true, text = it, color = Muted, fontSize = spx(16)) }
             em?.overview?.let { Text(raw = true, text = it, color = if (f) Tok.TextMid else Tok.TextLow, fontSize = spx(18), lineHeight = spx(25), maxLines = 3, overflow = TextOverflow.Ellipsis) }
