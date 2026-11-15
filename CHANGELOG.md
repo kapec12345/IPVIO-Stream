@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- K-019: The bottom of the Home dashboard shows the active Xtream account expiry date and time. Version 1.4.18-pl (code 23).
+
+- K-018: Live streams in movie-themed provider groups appear in Live TV and the programme guide. Existing catalogs are reclassified on upgrade. Version 1.4.17-pl (code 22).
+
+- K-017: Correct Xtream film and episode running times, upgrade two low-resolution Kino posters and open trailers directly in YouTube on Android TV. Version 1.4.16-pl (code 21).
+
+- K-016: A single verified Filmweb title of the correct media type can supply a rating despite a different provider year. Namesakes still require a unique year match. Version 1.4.15-pl (code 20).
+
 - K-015: Recently watched series posters show the saved episode and playback time. OK resumes directly on the shelf and in its full list. Version 1.4.14-pl (code 19).
 
 - K-014: Live TV opens the programme grid. Polish TVN Player HD stations can use their UHD schedule, and Crime and Investigation HD can use its FHD schedule. Version 1.4.13-pl (code 18).
