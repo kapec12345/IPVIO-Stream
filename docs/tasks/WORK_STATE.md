@@ -1,3 +1,19 @@
+## K-019 – Account expiry under the Home panel (2026-11-15)
+
+Installed preview 1.4.18-pl and verified the footer against the active provider account on the Philips before and after scrolling. See [scope and checks](K-019-account-expiry-on-home.md).
+
+## K-018 – Movie-themed live channels in the programme guide (2026-11-15)
+
+Verified on the Philips. All 78 previously misclassified entries moved to Live TV. The movie search and guide were checked on screen. See [device and regression checks](K-018-live-channels-in-movie-groups.md).
+
+## K-017 – VOD running times, Kino posters and trailers (2026-11-15)
+
+Preview 1.4.16-pl is installed on the Philips. Three trailer playbacks, title search for a missing trailer, both replacement posters, a movie runtime and individual episode lengths were verified. See [scope and device checks](K-017-vod-runtime-art-trailers.md).
+
+## K-016 – Filmweb match with a different provider year (2026-11-15)
+
+Preview 1.4.15-pl is installed on the Philips. The Apollo w ogniu poster and details both displayed 6,0. See [scope and device verification](K-016-filmweb-unique-title.md).
+
 ## K-015 – One-click episode resume from recently watched series (2026-11-15)
 
 Preview 1.4.14-pl is installed on the Philips. A remote OK resumed the saved episode and Back restored its history poster. See [scope and checks](K-015-series-poster-resume.md).
